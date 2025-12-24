@@ -197,6 +197,7 @@ class Task:
 
 # ========== 解析/选择 ==========
 def parse_mixed_selection(line: str, options: List[str]) -> Optional[List[str]]:
+    """在给定 options 顺序下解析编号/列名混合选择。"""
     if not line or not line.strip():
         return None
     toks = [tok for tok in re.split(r"[,\s]+", line.strip()) if tok]
@@ -218,6 +219,7 @@ def parse_mixed_selection(line: str, options: List[str]) -> Optional[List[str]]:
 
 
 def parse_tid_values(line: str, options: List[str]) -> List[str]:
+    """解析 traj_id 列表/范围。"""
     if not line or not line.strip():
         return []
     op_set = set(options)
@@ -241,7 +243,7 @@ def parse_tid_values(line: str, options: List[str]) -> List[str]:
 
 
 def parse_index_spec(line: str, max_n: int) -> List[int]:
-    """解析 '1,2,5-10' 为行号列表（1-based）。"""
+    """解析行号列表/范围（1-based）。"""
     if not line or not line.strip():
         return []
     idxs: List[int] = []
@@ -264,11 +266,7 @@ def parse_index_spec(line: str, max_n: int) -> List[int]:
 
 
 def build_value_pred(spec: str) -> Tuple[bool, Any]:
-    """
-    从 '1,2,3,5-10' 构造匹配谓词：
-    返回 (is_range, predicate_or_set)
-    - 若包含范围，尝试按数值比较，否则按字符串等值。
-    """
+    """把 '1,2,3,5-10' 转换为匹配谓词（支持数值范围与等值）。"""
     toks = [t for t in re.split(r"[,\s]+", spec.strip()) if t]
     has_range = any(re.fullmatch(r"\d+-\d+", t) for t in toks)
     if has_range:
@@ -284,11 +282,9 @@ def build_value_pred(spec: str) -> Tuple[bool, Any]:
             elif re.fullmatch(r"\d+", t):
                 values.add(float(t))
             else:
-                # 非数字，作为字符串等值
                 values.add(t)
 
         def pred(val: Any) -> bool:
-            # 优先数值比较
             try:
                 fv = float(val)
                 for a, b in ranges:
@@ -307,18 +303,39 @@ def build_value_pred(spec: str) -> Tuple[bool, Any]:
         return False, set(toks)
 
 
-# ========== 排序工具 ==========
+# ========== 排序工具（自然排序/混合类型） ==========
 _nat_re = re.compile(r"\d+|\D+")
 
 
-def _natural_key(x: Any):
-    if isinstance(x, str):
-        parts = _nat_re.findall(x)
-        key = []
-        for p in parts:
-            key.append(int(p) if p.isdigit() else p.lower())
-        return key
-    return x
+def _natural_key_parts(s: str) -> Tuple:
+    parts = _nat_re.findall(s)
+    key = []
+    for p in parts:
+        key.append(int(p) if p.isdigit() else p.lower())
+    return tuple(key)
+
+
+def _as_float_if_possible(v: Any) -> Optional[float]:
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, str):
+        try:
+            return float(v)
+        except Exception:
+            return None
+    return None
+
+
+def _sort_key_for_value(v: Any) -> Tuple[int, Tuple]:
+    """统一生成可比较的排序键。"""
+    if v is None:
+        return (3, (float("inf"),))
+    fv = _as_float_if_possible(v)
+    if fv is not None:
+        return (0, (fv,))
+    if isinstance(v, str):
+        return (1, _natural_key_parts(v))
+    return (2, (str(v).lower(),))
 
 
 def _apply_sort_dict_rows(
@@ -331,12 +348,9 @@ def _apply_sort_dict_rows(
 
     def sort_key(row: Dict[str, Any]):
         v = row.get(key_name)
-        hit = (
-            0
-            if (kw and isinstance(v, (str, int, float)) and kw in str(v).lower())
-            else 1
-        )
-        return (hit, _natural_key(v))
+        hit = 0 if (kw and kw in str(v).lower()) else 1
+        type_rank, val_key = _sort_key_for_value(v)
+        return (hit, type_rank, val_key)
 
     reverse = order == "desc"
     return sorted(rows, key=sort_key, reverse=reverse)
@@ -365,19 +379,59 @@ class TableViewer:
 
     @staticmethod
     def _print_cols_with_idx(columns: List[str]):
+        """按给定顺序打印列（调用方保证此顺序是自然排序）。"""
         for i, c in enumerate(columns, 1):
             print(f"{i}. {c}")
 
     @staticmethod
-    def _select_rows_by_spec(
-        rows_local: List[Dict[str, Any]], cols: List[str], spec: str
+    def _select_rows_by_spec_default_firstcol(
+        rows_local: List[Dict[str, Any]], first_col: str, spec: str
     ) -> List[Dict[str, Any]]:
-        """支持：序号列表/范围；或 字段=值列表/范围；精确匹配（=）。"""
+        """默认按第一列进行精确/数值范围匹配。"""
         spec = (spec or "").strip()
         if not spec:
             return []
-        # 字段=值列表/范围（精确）
-        if "=" in spec:
+        # 如果是行号选择（以#开头），走行号解析
+        if spec.startswith("#"):
+            idxs = parse_index_spec(spec[1:], len(rows_local))
+            return [rows_local[i - 1] for i in idxs]
+        # 第一列值列表/范围
+        is_range, payload = build_value_pred(spec)
+        sel = []
+        for r in rows_local:
+            val = r.get(first_col)
+            if is_range:
+                if payload(val):
+                    sel.append(r)
+            else:
+                fvq = None
+                # 尝试各 token 的等值匹配
+                for tok in payload:
+                    fvq = _as_float_if_possible(tok)
+                    fvv = _as_float_if_possible(val)
+                    if fvq is not None and fvv is not None:
+                        if fvv == fvq:
+                            sel.append(r)
+                            break
+                    else:
+                        if str(val) == str(tok):
+                            sel.append(r)
+                            break
+        return sel
+
+    @staticmethod
+    def _select_rows_by_spec(
+        rows_local: List[Dict[str, Any]],
+        cols: List[str],
+        spec: str,
+        default_first_col: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """支持：第一列默认匹配；或 字段=值列表/范围；或 #行号/范围。"""
+        spec = (spec or "").strip()
+        if not spec:
+            return []
+        # 字段= 值
+        if "=" in spec and not spec.startswith("#"):
             f, v = spec.split("=", 1)
             f = f.strip()
             v = v.strip()
@@ -385,16 +439,27 @@ class TableViewer:
                 return []
             is_range, payload = build_value_pred(v)
             selected = []
-            for idx, r in enumerate(rows_local, 1):
+            for r in rows_local:
                 val = r.get(f)
                 if is_range:
                     if payload(val):
                         selected.append(r)
                 else:
-                    if str(val) in payload:
-                        selected.append(r)
+                    fvq = _as_float_if_possible(v)
+                    fvv = _as_float_if_possible(val)
+                    if fvq is not None and fvv is not None:
+                        if fvv == fvq:
+                            selected.append(r)
+                    else:
+                        if str(val) == v:
+                            selected.append(r)
             return selected
-        # 序号列表/范围
+        # 默认按第一列
+        if default_first_col:
+            return TableViewer._select_rows_by_spec_default_firstcol(
+                rows_local, default_first_col, spec
+            )
+        # 否则行号
         idxs = parse_index_spec(spec, len(rows_local))
         return [rows_local[i - 1] for i in idxs]
 
@@ -404,11 +469,11 @@ class TableViewer:
         default_columns: Optional[List[str]] = None,
         page_size: int = 20,
         title: str = "",
-        export_all_handler=None,  # 单轨：导出全部轨迹（合并到一个文件）
-        delete_handler=None,  # 单轨：删除行
-        export_page_option: bool = True,  # 单轨：仅导整表 -> False；列表：允许导当前页 -> True
+        export_all_handler=None,
+        delete_handler=None,
+        export_page_option: bool = True,
     ):
-        rows_local = list(table.rows)  # 与外部 rows 引用共享
+        rows_local = list(table.rows)
         cols = default_columns or table.columns
         cols = [c for c in cols if c in table.columns]
         page = 0
@@ -441,7 +506,6 @@ class TableViewer:
                 TableViewer._print(cols, rows_local, s, e)
                 print("-" * 80)
 
-            # 统一字母，两个字名称（有功能才显示）
             menu_items = [
                 "列设(c)",
                 "下页(n)",
@@ -463,7 +527,7 @@ class TableViewer:
             if is_quit(cmd) or cmd == "q":
                 return
             elif cmd == "n":
-                if page + 1 < total:
+                if page + 1 < refresh_total():
                     page += 1
             elif cmd == "p":
                 if page > 0:
@@ -477,25 +541,27 @@ class TableViewer:
                 to_page = input_line("跳转到第几页：")
                 if to_page.isdigit():
                     tp = int(to_page)
-                    if 1 <= tp <= total:
+                    if 1 <= tp <= refresh_total():
                         page = tp - 1
             elif cmd == "c":
-                TableViewer._print_cols_with_idx(table.columns)
+                # 自然排序的列清单，并按同一顺序解析
+                cols_sorted = sorted(table.columns, key=_natural_key_parts)
+                TableViewer._print_cols_with_idx(cols_sorted)
                 s = input_line("列编号或列名（空格/逗号；空=全部）：")
                 if is_quit(s):
                     continue
                 if not s.strip():
                     cols = list(table.columns)
                 else:
-                    mixed = parse_mixed_selection(s, table.columns)
+                    mixed = parse_mixed_selection(s, cols_sorted)
                     if mixed:
-                        cols = mixed
+                        cols = [c for c in mixed if c in table.columns]
                     else:
                         toks = [t for t in re.split(r"[,\s]+", s.strip()) if t]
                         cols = [
-                            table.columns[int(t) - 1]
+                            cols_sorted[int(t) - 1]
                             for t in toks
-                            if t.isdigit() and 1 <= int(t) <= len(table.columns)
+                            if t.isdigit() and 1 <= int(t) <= len(cols_sorted)
                         ]
             elif cmd == "s":
                 key = input_line("排序字段：")
@@ -511,10 +577,15 @@ class TableViewer:
                 sort_state = {"key": key, "order": order, "keyword": kw or None}
                 page = 0
             elif cmd == "x":
-                spec = input_line("抽取条件（序号或 字段=值列表/范围；输入 q 取消）：")
+                print(
+                    f"提示：默认按“{cols[0]}”筛选；其它列请用“列名=值”。行号用“#1,3,5-10”。"
+                )
+                spec = input_line("抽取条件：")
                 if is_quit(spec):
                     continue
-                sel = TableViewer._select_rows_by_spec(rows_local, cols, spec)
+                sel = TableViewer._select_rows_by_spec(
+                    rows_local, cols, spec, default_first_col=cols[0]
+                )
                 if not sel:
                     print("未匹配到行")
                     pause()
@@ -522,17 +593,22 @@ class TableViewer:
                 rows_local = sel
                 page = 0
             elif cmd == "d" and delete_handler is not None:
-                spec = input_line("删除条件（序号或 字段=值列表/范围；输入 q 取消）：")
+                print(
+                    f"提示：默认按“{cols[0]}”筛选；其它列请用“列名=值”。行号用“#1,3,5-10”。"
+                )
+                spec = input_line("删除条件：")
                 if is_quit(spec):
                     continue
-                sel = TableViewer._select_rows_by_spec(rows_local, cols, spec)
+                sel = TableViewer._select_rows_by_spec(
+                    rows_local, cols, spec, default_first_col=cols[0]
+                )
                 if not sel:
                     print("未匹配到行")
                     pause()
                     continue
                 try:
-                    delete_handler(sel)  # 修改外部表 rows
-                    rows_local = list(table.rows)  # 重新载入
+                    delete_handler(sel)
+                    rows_local = list(table.rows)
                     print(f"已删除 {len(sel)} 行")
                 except Exception as ex:
                     print(f"删除失败：{ex}")
@@ -547,20 +623,19 @@ class TableViewer:
                 if not path:
                     path = "all_trajs_view.csv"
                 try:
-                    export_all_handler(cols, path)  # 合并所有轨迹为一个文件
+                    export_all_handler(cols, path)
                     print(f"已导出：{os.path.abspath(path)}")
                 except Exception as ex:
                     print(f"导出失败：{ex}")
                 pause()
             elif cmd == "e":
-                # 单轨视图：仅导整表；列表视图可允许导当前页（由 export_page_option 控制）
                 if export_page_option:
                     opt = (
                         input_line("导出范围（all/page；回车=all，输入 q 取消）：")
                         .strip()
                         .lower()
                     )
-                    if is_quit(opt):  # 取消
+                    if is_quit(opt):
                         continue
                     if opt not in ("all", "page", ""):
                         opt = "all"
@@ -766,20 +841,21 @@ class MDManagerCLI:
     def choose_columns(all_columns: List[str]) -> List[str]:
         clear_screen()
         print("选择显示列（空格/逗号均可；可混合序号与列名；空=精简）")
-        TableViewer._print_cols_with_idx(all_columns)
+        ordered = sorted(all_columns, key=_natural_key_parts)
+        TableViewer._print_cols_with_idx(ordered)
         s = input_line("> ")
         if is_quit(s):
             s = ""
         if not s.strip():
-            return all_columns[: min(8, len(all_columns))]
-        mixed = parse_mixed_selection(s, all_columns)
+            return ordered[: min(8, len(ordered))]
+        mixed = parse_mixed_selection(s, ordered)
         if mixed:
             return mixed
         toks = [t for t in re.split(r"[,\s]+", s.strip()) if t]
         return [
-            all_columns[int(t) - 1]
+            ordered[int(t) - 1]
             for t in toks
-            if t.isdigit() and 1 <= int(t) <= len(all_columns)
+            if t.isdigit() and 1 <= int(t) <= len(ordered)
         ]
 
     def run(self):
@@ -863,7 +939,7 @@ class MDManagerCLI:
         print(f"\n完成：处理子目录 {processed} 个。")
         pause()
 
-    # ===== 轨迹列表（统一字母；精确匹配；抽取/导出/删除/排序保持） =====
+    # ===== 轨迹列表（修复列设解析顺序；默认按首列筛选） =====
     def menu_trajectory_list(self):
         fields = self.current_task.settings.get("list_fields", ["traj_id", "name"])
         order_tids = sorted(self.current_task.trajectories.keys(), key=lambda x: int(x))
@@ -988,28 +1064,32 @@ class MDManagerCLI:
                 rows_local, cols_local = build_rows(order_tids, fields)
                 page = 0
             elif cmd == "c":
+                # 自然排序的字段列表（含 meta），并按同一顺序解析
                 fields_all = ["traj_id", "name"]
                 calc_cols = sorted(
                     {
                         k
                         for t in self.current_task.trajectories.values()
                         for k in t.meta.keys()
-                    }
+                    },
+                    key=_natural_key_parts,
                 )
-                fields_all += [c for c in calc_cols if c not in fields_all]
-                for i, f in enumerate(fields_all, 1):
-                    print(f"{i}. {f}")
+                for c in calc_cols:
+                    if c not in fields_all:
+                        fields_all.append(c)
+                cols_sorted = sorted(fields_all, key=_natural_key_parts)
+                TableViewer._print_cols_with_idx(cols_sorted)
                 s2 = input_line("字段编号或列名（空格/逗号均可；空=不变）：")
                 if is_quit(s2) or not s2.strip():
                     continue
-                mixed = parse_mixed_selection(s2, fields_all)
+                mixed = parse_mixed_selection(s2, cols_sorted)
                 chosen = (
                     mixed
                     if mixed
                     else [
                         c.strip()
                         for c in s2.split(",")
-                        if c.strip() and c.strip() in fields_all
+                        if c.strip() and c.strip() in cols_sorted
                     ]
                 )
                 self.current_task.settings["list_fields"] = chosen
@@ -1017,15 +1097,19 @@ class MDManagerCLI:
                 rows_local, cols_local = build_rows(order_tids, fields)
                 page = 0
             elif cmd == "x":
-                spec = input_line("抽取条件（序号或 字段=值列表/范围；输入 q 取消）：")
+                print(
+                    f"提示：默认按“{cols_local[0]}”筛选；其它列请用“列名=值”。行号用“#1,3,5-10”。"
+                )
+                spec = input_line("抽取条件：")
                 if is_quit(spec):
                     continue
-                # 复用 TableViewer 的选择逻辑
                 tmp_rows = [
                     {"_tid": r["_tid"], **{c: r.get(c) for c in cols_local}}
                     for r in rows_local
                 ]
-                sel = TableViewer._select_rows_by_spec(tmp_rows, cols_local, spec)
+                sel = TableViewer._select_rows_by_spec(
+                    tmp_rows, cols_local, spec, default_first_col=cols_local[0]
+                )
                 if not sel:
                     print("未匹配到条目")
                     pause()
@@ -1049,30 +1133,25 @@ class MDManagerCLI:
                     print(f"导出失败：{ex}")
                 pause()
             elif cmd == "v":
-                q = input_line("输入条件（字段=值 或 关键字；留空=输入轨ID）：").strip()
+                print(f"提示：默认按“{cols_local[0]}”筛选；其它列请用“列名=值”。")
+                q = input_line("查看条件：").strip()
                 target_tid: Optional[str] = None
                 if not q:
+                    # 留空：按 traj_id 输入
                     tid_in = input_line("轨迹ID：").strip()
                     if tid_in in self.current_task.trajectories:
                         target_tid = tid_in
                 else:
+                    # 纯数字 => 默认按首列精确/范围；其它列用“列名=值”
                     matches: List[Dict[str, Any]] = []
-                    if "=" in q:
-                        f, v = q.split("=", 1)
-                        f = f.strip()
-                        v = v.strip()
-                        # 精确匹配
-                        for r in rows_local:
-                            if f in r and str(r.get(f, "")) == v:
-                                matches.append(r)
-                    else:
-                        # 关键字模糊（当前显示列）
-                        v = q.lower()
-                        for r in rows_local:
-                            for c in cols_local:
-                                if v in str(r.get(c, "")).lower():
-                                    matches.append(r)
-                                    break
+                    tmp_rows = [
+                        {"_tid": r["_tid"], **{c: r.get(c) for c in cols_local}}
+                        for r in rows_local
+                    ]
+                    sel = TableViewer._select_rows_by_spec(
+                        tmp_rows, cols_local, q, default_first_col=cols_local[0]
+                    )
+                    matches = sel
                     if not matches:
                         print("未匹配到轨迹")
                         pause()
@@ -1087,9 +1166,9 @@ class MDManagerCLI:
                                 t = self.current_task.trajectories.get(r["_tid"])
                                 name_val = t.name if t else ""
                             print(f"{i}. [{r['_tid']}] {name_val}")
-                        sel = input_line("编号：").strip()
-                        if sel.isdigit():
-                            idx = int(sel)
+                        sel_idx = input_line("编号：").strip()
+                        if sel_idx.isdigit():
+                            idx = int(sel_idx)
                             if 1 <= idx <= len(matches):
                                 target_tid = matches[idx - 1]["_tid"]
                 if not target_tid:
@@ -1101,28 +1180,23 @@ class MDManagerCLI:
                     continue
                 self.menu_view_trajectory(traj)
             elif cmd == "d":
-                q = input_line("删除条件（字段=值 或 关键字；留空=按轨ID）：").strip()
+                print(
+                    f"提示：默认按“{cols_local[0]}”筛选；其它列请用“列名=值”。行号用“#1,3,5-10”。"
+                )
+                q = input_line("删除条件：").strip()
                 del_tids: List[str] = []
                 if not q:
                     tid_in = input_line("轨迹ID（逗号/范围，如 10-20）：").strip()
                     options = list(self.current_task.trajectories.keys())
                     del_tids = parse_tid_values(tid_in, options)
                 else:
-                    matches: List[Dict[str, Any]] = []
-                    if "=" in q:
-                        f, v = q.split("=", 1)
-                        f = f.strip()
-                        v = v.strip()
-                        for r in rows_local:
-                            if f in r and str(r.get(f, "")) == v:
-                                matches.append(r)
-                    else:
-                        v = q.lower()
-                        for r in rows_local:
-                            for c in cols_local:
-                                if v in str(r.get(c, "")).lower():
-                                    matches.append(r)
-                                    break
+                    tmp_rows = [
+                        {"_tid": r["_tid"], **{c: r.get(c) for c in cols_local}}
+                        for r in rows_local
+                    ]
+                    matches = TableViewer._select_rows_by_spec(
+                        tmp_rows, cols_local, q, default_first_col=cols_local[0]
+                    )
                     if not matches:
                         print("未匹配到轨迹")
                         pause()
@@ -1156,7 +1230,7 @@ class MDManagerCLI:
                 rows_local, cols_local = build_rows(order_tids, fields)
                 page = 0
 
-    # ===== 轨迹详情（表视图统一字母；支持删/抽/全导） =====
+    # ===== 单轨详情/表视图（同字母；默认按首列筛选） =====
     def menu_view_trajectory(self, traj: Trajectory):
         while True:
             clear_screen()
@@ -1164,7 +1238,7 @@ class MDManagerCLI:
             if not traj.meta:
                 print("（插件未写入任何参数）")
             else:
-                for k in sorted(traj.meta.keys()):
+                for k in sorted(traj.meta.keys(), key=_natural_key_parts):
                     print(f"{k}: {traj.meta.get(k)}")
             print("命令：表视图(t)｜返回(q)")
             cmd = input_line("> ").strip().lower()
@@ -1176,7 +1250,6 @@ class MDManagerCLI:
                 page = int(self.current_task.settings.get("page_size", 20))
 
                 def export_all_handler(current_cols: List[str], out_path: str):
-                    # 单轨视图额外：导出全部轨迹为一个文件（同列）
                     all_rows = []
                     header = ["traj_id"] + current_cols
                     for t in sorted(
@@ -1195,12 +1268,9 @@ class MDManagerCLI:
                             w.writerow(r)
 
                 def delete_handler(rows_to_del: List[Dict[str, Any]]):
-                    # rows_to_del 与 traj.table.rows 中的字典对象是同引用，可直接删
                     ids = set(id(r) for r in rows_to_del)
-                    new_rows = [r for r in traj.table.rows if id(r) not in ids]
-                    traj.table.rows = new_rows
+                    traj.table.rows = [r for r in traj.table.rows if id(r) not in ids]
 
-                # 单轨表视图：导出仅导整表（不导当前页）；支持删行/抽取/全导
                 TableViewer.run(
                     SimpleTable(traj.table.columns, traj.table.rows),
                     default_columns=cols,
@@ -1211,7 +1281,7 @@ class MDManagerCLI:
                     export_page_option=False,
                 )
 
-    # ===== 计算 =====
+    # ===== 计算/参数/保存/切换 =====
     def menu_compute(self):
         while True:
             clear_screen()
@@ -1237,7 +1307,7 @@ class MDManagerCLI:
             print("可用插件：")
             for i, p in enumerate(clist, 1):
                 print(f"{i}. {p.name} - {p.description}")
-            s2 = input_line("选择插件编号：")
+            s2 = input_line("选择编号：")
             if is_quit(s2):
                 continue
             if not s2.isdigit() or not (1 <= int(s2) <= len(clist)):
@@ -1255,7 +1325,6 @@ class MDManagerCLI:
             pause()
             continue
 
-    # ===== 参数查看 =====
     def menu_view_task_params(self):
         clear_screen()
         print("=== 任务参数 ===")
@@ -1265,7 +1334,7 @@ class MDManagerCLI:
             cols = ["键", "值"]
             rows = [
                 {"键": k, "值": self.current_task.meta[k]}
-                for k in sorted(self.current_task.meta.keys())
+                for k in sorted(self.current_task.meta.keys(), key=_natural_key_parts)
             ]
             w = {c: len(c) for c in cols}
             for r in rows:
@@ -1279,7 +1348,6 @@ class MDManagerCLI:
                 print(" | ".join(format_value(r.get(c)).ljust(w[c]) for c in cols))
         pause()
 
-    # ===== 保存 =====
     def menu_save(self):
         clear_screen()
         name = input_line(f"任务名（当前 {self.current_task.name}，留空=不变）：")
@@ -1294,13 +1362,13 @@ class MDManagerCLI:
             print(f"保存失败：{ex}")
         pause()
 
-    # ===== 切换 =====
     def menu_switch(self):
         clear_screen()
         root = self.tasks_root
         os.makedirs(root, exist_ok=True)
         names = sorted(
-            [d for d in os.listdir(root) if os.path.isdir(os.path.join(root, d))]
+            [d for d in os.listdir(root) if os.path.isdir(os.path.join(root, d))],
+            key=_natural_key_parts,
         )
         if not names:
             print("暂无任务")
