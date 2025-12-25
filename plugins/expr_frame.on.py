@@ -58,10 +58,7 @@ ALLOWED_FUNCS = {
     "ceil": math.ceil,
     "floor": math.floor,
 }
-ALLOWED_CONSTS = {
-    "pi": math.pi,
-    "e": math.e,
-}
+ALLOWED_CONSTS = {"pi": math.pi, "e": math.e}
 ALLOWED_NAMES = set(ALLOWED_FUNCS.keys()) | set(ALLOWED_CONSTS.keys())
 
 ALLOWED_NODES = (
@@ -171,6 +168,7 @@ def _build_ctx_min(
     row: Dict[str, Any], task_meta: Dict[str, Any], names_needed: Set[str]
 ) -> Dict[str, Any]:
     ctx: Dict[str, Any] = {}
+    # 行值
     for nm in names_needed:
         if nm in row:
             v = row[nm]
@@ -179,6 +177,7 @@ def _build_ctx_min(
                 ctx[nm] = fv if fv is not None else v
             else:
                 ctx[nm] = v
+    # 任务元数据补缺
     for nm in names_needed:
         if nm in ctx:
             continue
@@ -193,6 +192,14 @@ def _build_ctx_min(
     return ctx
 
 
+def _is_bad_number(val) -> bool:
+    return isinstance(val, float) and (math.isnan(val) or math.isinf(val))
+
+
+def _err_text(ex: Exception) -> str:
+    return f"错误: {type(ex).__name__}: {ex}"
+
+
 def run_expr_frame(task, args):
     raw = (args.get("__raw__") or "").strip()
     if raw.lower() in ("q", "quit", "exit"):
@@ -202,6 +209,7 @@ def run_expr_frame(task, args):
     if not compiled_lines:
         return {"process": ["[表达-帧] 未输入"]}
 
+    # 所有表达式涉及的变量名（并集）
     names_union: Set[str] = set()
     for cl in compiled_lines:
         names_union |= cl.need_names
@@ -219,10 +227,16 @@ def run_expr_frame(task, args):
 
         for r in rows:
             ctx = _build_ctx_min(r, task.meta, names_union)
+
             for i, cl in enumerate(compiled_lines, start=1):
                 try:
                     exec(cl.code, GLOBALS, ctx)
                     val = ctx.get("__v__")
+
+                    # NaN / Inf 也视为“错误”
+                    if _is_bad_number(val):
+                        raise ValueError("数值非法（NaN/Inf）")
+
                     if isinstance(val, (int, float)) and val is not None:
                         out = fmt_f10(float(val))
                         out_for_ctx = float(val)
@@ -242,11 +256,20 @@ def run_expr_frame(task, args):
                         r[key] = out
                         new_cols.add(key)
                         cols_set.add(key)
+
                 except Exception as ex:
-                    key = f"_error{i}"
-                    r[key] = f"{type(ex).__name__}: {ex}"
-                    new_cols.add(key)
-                    cols_set.add(key)
+                    # —— 错误也生成参数，但直接把错误文本写在目标列 —— #
+                    if cl.kind == "assign":
+                        r[cl.var] = _err_text(ex)
+                        new_cols.add(cl.var)
+                        cols_set.add(cl.var)
+                    else:
+                        key = f"_expr{i}"
+                        r[key] = _err_text(ex)
+                        new_cols.add(key)
+                        cols_set.add(key)
+                    # 不再生成 _errorN 列
+
             frame_count += 1
 
         traj.table.columns = list(cols_set)
