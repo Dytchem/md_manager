@@ -15,6 +15,7 @@
 
 - `md_manager.py`：程序入口（轻量化 launcher，交由 `cli.py` 驱动）
 - `core.py`：核心数据结构（`Task`、`Trajectory`、`SimpleTable`）与工具函数
+
 # MD Manager
 
 命令行工具，用于管理分子动力学（MD）任务：批量导入轨迹、通过插件计算参数、在终端查看并导出结果。

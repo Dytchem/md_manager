@@ -6,6 +6,7 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
+
 class ActionRecorder:
     def __init__(self):
         self.history: List[Dict[str, Any]] = []
@@ -27,7 +28,9 @@ class ActionRecorder:
         lines.append("# -*- coding: utf-8 -*-")
         lines.append("import os, re, json, sys")
         lines.append("")
-        lines.append("# ensure project root is on sys.path so imports work when this script is run from a subdirectory")
+        lines.append(
+            "# ensure project root is on sys.path so imports work when this script is run from a subdirectory"
+        )
         lines.append("here = os.path.dirname(os.path.abspath(__file__))")
         lines.append("proj_root = os.path.abspath(os.path.join(here, '..'))")
         lines.append("if proj_root not in sys.path:")
@@ -75,7 +78,7 @@ class ActionRecorder:
                 continue
             fa = os.path.normcase(os.path.normpath(os.path.abspath(folder_arg)))
             pname = p.get("plugin")
-            for (r_norm, cre, plugin_names) in seen_imports:
+            for r_norm, cre, plugin_names in seen_imports:
                 # match if folder is equal to root or under root
                 if fa == r_norm or fa.startswith(r_norm + os.sep):
                     name = os.path.basename(fa)
@@ -95,15 +98,25 @@ class ActionRecorder:
                 root = p.get("root")
                 pattern = p.get("pattern")
                 plugin_names = p.get("plugins") or []
-                lines.append(f"    # import: root={json.dumps(root, ensure_ascii=False)} pattern={json.dumps(pattern)}")
+                lines.append(
+                    f"    # import: root={json.dumps(root, ensure_ascii=False)} pattern={json.dumps(pattern)}"
+                )
                 lines.append(f"    rx = re.compile({json.dumps(pattern)})")
-                lines.append(f"    subs = sorted([d for d in os.listdir({json.dumps(root)}) if os.path.isdir(os.path.join({json.dumps(root)}, d)) and rx.match(d)])")
+                lines.append(
+                    f"    subs = sorted([d for d in os.listdir({json.dumps(root)}) if os.path.isdir(os.path.join({json.dumps(root)}, d)) and rx.match(d)])"
+                )
                 lines.append(f"    for d in subs:")
                 lines.append(f"        folder = os.path.join({json.dumps(root)}, d)")
-                lines.append(f"        for pname in {json.dumps(plugin_names, ensure_ascii=False)}:")
-                lines.append(f"            plugin = next((pp for pp in pm.list_plugins(scope_filter='Import') if pp.name==pname), None)")
+                lines.append(
+                    f"        for pname in {json.dumps(plugin_names, ensure_ascii=False)}:"
+                )
+                lines.append(
+                    f"            plugin = next((pp for pp in pm.list_plugins(scope_filter='Import') if pp.name==pname), None)"
+                )
                 lines.append(f"            if plugin:")
-                lines.append("                result = plugin.run(task, {\"folder\": folder})")
+                lines.append(
+                    '                result = plugin.run(task, {"folder": folder})'
+                )
                 lines.append("                core.apply_plugin_result(task, result)")
                 lines.append("")
                 continue
@@ -117,7 +130,9 @@ class ActionRecorder:
                 )
                 # Use the recorded args exactly as the user provided when running the plugin.
                 lines.append("    if plugin:")
-                lines.append(f"        result = plugin.run(task, {json.dumps(args, ensure_ascii=False)})")
+                lines.append(
+                    f"        result = plugin.run(task, {json.dumps(args, ensure_ascii=False)})"
+                )
                 lines.append("        core.apply_plugin_result(task, result)")
                 lines.append("")
             elif a == "export":
@@ -128,7 +143,9 @@ class ActionRecorder:
                 if ptype == "traj_list":
                     lines.append(f"    # export traj list -> {path}")
                     lines.append("    rows = []")
-                    lines.append("    for tid in sorted(task.trajectories.keys(), key=lambda x: int(x)):")
+                    lines.append(
+                        "    for tid in sorted(task.trajectories.keys(), key=lambda x: int(x)):"
+                    )
                     lines.append("        t = task.trajectories.get(tid)")
                     lines.append("        if not t: continue")
                     lines.append("        row = {}")
@@ -138,9 +155,13 @@ class ActionRecorder:
                         elif c == "name":
                             lines.append("        row['name'] = t.name")
                         else:
-                            lines.append(f"        row[{json.dumps(c)}] = t.meta.get({json.dumps(c)})")
+                            lines.append(
+                                f"        row[{json.dumps(c)}] = t.meta.get({json.dumps(c)})"
+                            )
                     lines.append("        rows.append(row)")
-                    lines.append(f"    core.SimpleTable({json.dumps(cols)}, rows).to_csv({json.dumps(path)})")
+                    lines.append(
+                        f"    core.SimpleTable({json.dumps(cols)}, rows).to_csv({json.dumps(path)})"
+                    )
                     lines.append("")
                 elif ptype in ("traj_view", "traj_view_all"):
                     tid = None
@@ -151,9 +172,13 @@ class ActionRecorder:
                         lines.append("")
                     else:
                         lines.append(f"    # export traj {tid} -> {path}")
-                        lines.append(f"    t = task.trajectories.get({json.dumps(str(tid))})")
+                        lines.append(
+                            f"    t = task.trajectories.get({json.dumps(str(tid))})"
+                        )
                         lines.append("    if t:")
-                        lines.append(f"        core.SimpleTable({json.dumps(cols)}, t.table.rows).to_csv({json.dumps(path)})")
+                        lines.append(
+                            f"        core.SimpleTable({json.dumps(cols)}, t.table.rows).to_csv({json.dumps(path)})"
+                        )
                         lines.append("")
                 else:
                     lines.append(f"    # unknown export type {ptype} -> {path}")
