@@ -2,19 +2,20 @@
 
 import ast
 import math
-from typing import Dict, Any, List, Tuple, Set
+from typing import Any, Dict, List, Set, Tuple
 
 # 主程序在加载时注入 Trajectory/SimpleTable；兜底导入用于静态检查或独立运行
 try:
     Trajectory  # type: ignore
     SimpleTable  # type: ignore
 except NameError:
-    import sys as _sys, os as _os
+    import os as _os
+    import sys as _sys
 
     _root = _os.path.dirname(_os.path.dirname(__file__))
     if _root not in _sys.path:
         _sys.path.insert(0, _root)
-    from md_manager import Trajectory, SimpleTable  # type: ignore
+    from md_manager import SimpleTable, Trajectory  # type: ignore
 
 
 def _to_float_once(v):

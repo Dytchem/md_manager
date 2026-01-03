@@ -1,10 +1,10 @@
 # core.py
 # 数据模型与通用工具
-from typing import Dict, List, Optional, Any, Tuple
-import os
 import csv
 import json
+import os
 import re
+from typing import Any, Dict, List, Optional, Tuple
 
 
 def format_value(v: Any) -> str:

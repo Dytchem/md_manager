@@ -19,12 +19,13 @@ try:
     Trajectory  # type: ignore
     SimpleTable  # type: ignore
 except NameError:
-    import sys as _sys, os as _os
+    import os as _os
+    import sys as _sys
 
     _root = _os.path.dirname(_os.path.dirname(__file__))
     if _root not in _sys.path:
         _sys.path.insert(0, _root)
-    from md_manager import Trajectory, SimpleTable  # type: ignore
+    from md_manager import SimpleTable, Trajectory  # type: ignore
 
 
 def _to_float(v):

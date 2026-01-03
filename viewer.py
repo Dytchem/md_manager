@@ -1,21 +1,14 @@
 # viewer.py (restored full-featured table viewer)
-from typing import List, Dict, Any, Optional
-import re
-import os
 import csv
-from ui_utils import clear_screen, pause, input_line, is_quit
-from core import (
-    format_value,
-    build_value_pred,
-    parse_index_spec,
-    parse_tid_values,
-    parse_mixed_selection,
-    _as_float_if_possible,
-    _natural_key_parts,
-    _apply_sort_dict_rows,
-    SimpleTable,
-)
+import os
+import re
+from typing import Any, Dict, List, Optional
+
+from core import (SimpleTable, _apply_sort_dict_rows, _as_float_if_possible,
+                  _natural_key_parts, build_value_pred, format_value,
+                  parse_index_spec, parse_mixed_selection, parse_tid_values)
 from recorder import ActionRecorder
+from ui_utils import clear_screen, input_line, is_quit, pause
 
 
 class TableViewer:
@@ -53,6 +46,14 @@ class TableViewer:
         if spec.startswith("#"):
             idxs = parse_index_spec(spec[1:], len(rows_local))
             return [rows_local[i - 1] for i in idxs]
+        # regex shorthand: re:pattern or /pattern/
+        if spec.startswith("re:") or (spec.startswith("/") and spec.endswith("/")):
+            pat = spec[3:] if spec.startswith("re:") else spec[1:-1]
+            try:
+                cre = re.compile(pat)
+            except Exception:
+                return []
+            return [r for r in rows_local if cre.search(str(r.get(first_col)))]
         is_range, payload = build_value_pred(spec)
         sel: List[Dict[str, Any]] = []
         for r in rows_local:
@@ -90,6 +91,19 @@ class TableViewer:
             v = v.strip()
             if f not in cols:
                 return []
+            # allow regex value: re:pattern or /pattern/
+            if v.startswith("re:") or (v.startswith("/") and v.endswith("/")):
+                pat = v[3:] if v.startswith("re:") else v[1:-1]
+                try:
+                    cre = re.compile(pat)
+                except Exception:
+                    return []
+                selected: List[Dict[str, Any]] = []
+                for r in rows_local:
+                    val = r.get(f)
+                    if val is not None and cre.search(str(val)):
+                        selected.append(r)
+                return selected
             is_range, payload = build_value_pred(v)
             selected: List[Dict[str, Any]] = []
             for r in rows_local:
@@ -371,15 +385,20 @@ def menu_trajectory_list(manager):
             t = manager.current_task.trajectories.get(tid)
             if not t:
                 continue
-            row = {"traj_id": t.traj_id, "name": t.name}
+            row = {}
+            # always keep internal traj_id for mapping back to trajectories
+            row["traj_id"] = t.traj_id
             for f in use_fields:
-                if f in ("traj_id", "name"):
+                if f == "traj_id":
+                    # already set
                     continue
-                row[f] = t.meta.get(f)
+                elif f == "name":
+                    row[f] = t.name
+                else:
+                    row[f] = t.meta.get(f)
             rows.append(row)
-        return rows, ["traj_id", "name"] + [
-            f for f in use_fields if f not in ("traj_id", "name")
-        ]
+        # header follows the user's requested order exactly
+        return rows, list(use_fields)
 
     rows_local, cols_local = build_rows(order_tids, fields)
 
@@ -485,6 +504,8 @@ def menu_trajectory_list(manager):
             if key:
                 rows_local = _apply_sort_dict_rows(rows_local, key, order, kw or None)
                 sort_state = {"key": key, "order": order, "keyword": kw or None}
+                # update ordering to preserve current sorted order for subsequent ops
+                order_tids = [str(r.get("traj_id")) for r in rows_local]
                 page = 0
         elif base == "x":
             print(

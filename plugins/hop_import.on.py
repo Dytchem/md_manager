@@ -1,4 +1,3 @@
-
 # plugins/hop_import.on.py
 # -*- coding: utf-8 -*-
 """
@@ -31,34 +30,46 @@ Hop 导入插件（教学示例）
 
 import os
 import re
-from typing import Dict, Any, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 # 兜底导入（主程序会注入，静态检查或独立运行时可用）
 try:
     Trajectory  # type: ignore
     SimpleTable  # type: ignore
 except NameError:
-    import sys as _sys, os as _os
+    import os as _os
+    import sys as _sys
+
     _root = _os.path.dirname(_os.path.dirname(__file__))
     if _root not in _sys.path:
         _sys.path.insert(0, _root)
-    from md_manager import Trajectory, SimpleTable  # type: ignore
+    from md_manager import SimpleTable, Trajectory  # type: ignore
+
 
 def _to_float(v):
-    try: return float(v)
-    except Exception: return None
+    try:
+        return float(v)
+    except Exception:
+        return None
+
 
 def _to_int(v):
-    try: return int(str(v).strip())
-    except Exception: return None
+    try:
+        return int(str(v).strip())
+    except Exception:
+        return None
+
 
 def fmt_t8(x: float) -> str:
-    if x is None: return ""
+    if x is None:
+        return ""
     return f"{x:.8f}"
+
 
 def fmt_int(v) -> int:
     iv = _to_int(v)
     return iv if iv is not None else None
+
 
 def _get_or_create_traj_for_folder(task, folder: str, suggested_name: str = None):
     ab = os.path.abspath(folder)
@@ -67,16 +78,22 @@ def _get_or_create_traj_for_folder(task, folder: str, suggested_name: str = None
             return traj
     tid = task.next_traj_id()
     name = suggested_name or os.path.basename(ab) or f"traj_{tid}"
-    new_traj = Trajectory(tid, name, SimpleTable(columns=[], rows=[]), meta={"source_folder": ab, "traj_seq": int(tid)})
+    new_traj = Trajectory(
+        tid,
+        name,
+        SimpleTable(columns=[], rows=[]),
+        meta={"source_folder": ab, "traj_seq": int(tid)},
+    )
     task.add_trajectory(new_traj)
     return new_traj
+
 
 def _parse_hop_all_time(path: str) -> Tuple[Dict[int, Tuple[float, int]], List[int]]:
     hop: Dict[int, Tuple[float, int]] = {}
     steps: List[int] = []
     with open(path, "r", encoding="utf-8") as fh:
         for line in fh:
-            m = re.match(r'^\s*(\d+)\s+([0-9\.\-E]+)\s+current state\s+(\d+)\s*$', line)
+            m = re.match(r"^\s*(\d+)\s+([0-9\.\-E]+)\s+current state\s+(\d+)\s*$", line)
             if m:
                 step = int(m.group(1))
                 t_val = _to_float(m.group(2))
@@ -85,6 +102,7 @@ def _parse_hop_all_time(path: str) -> Tuple[Dict[int, Tuple[float, int]], List[i
                 steps.append(step)
     steps = sorted(set(steps))
     return hop, steps
+
 
 def run_import_hop(task, args):
     """
@@ -98,7 +116,8 @@ def run_import_hop(task, args):
       - {"process": ["日志1", "日志2", ...]} 用于主程序输出
     """
     folder = args.get("folder")
-    if not folder or not os.path.isdir(folder): raise ValueError("folder 无效")
+    if not folder or not os.path.isdir(folder):
+        raise ValueError("folder 无效")
     path = os.path.join(folder, "hop_all_time.out")
     proc: List[str] = []
     if not os.path.isfile(path):
@@ -106,17 +125,26 @@ def run_import_hop(task, args):
         return {"process": proc}
 
     hop, steps = _parse_hop_all_time(path)
-    traj = _get_or_create_traj_for_folder(task, folder, suggested_name=os.path.basename(folder))
+    traj = _get_or_create_traj_for_folder(
+        task, folder, suggested_name=os.path.basename(folder)
+    )
 
-    rows_by_step: Dict[int, Dict[str, Any]] = { _to_int(r.get("step")): r for r in traj.table.rows if _to_int(r.get("step")) is not None }
-    cols_set = set(traj.table.columns); cols_set.update({"step", "t", "state"})
+    rows_by_step: Dict[int, Dict[str, Any]] = {
+        _to_int(r.get("step")): r
+        for r in traj.table.rows
+        if _to_int(r.get("step")) is not None
+    }
+    cols_set = set(traj.table.columns)
+    cols_set.update({"step", "t", "state"})
 
     times: List[float] = []
     for s in steps:
         (t_val, state) = hop.get(s, (None, None))
         row = rows_by_step.get(s)
         if row is None:
-            row = {"step": s}; traj.table.rows.append(row); rows_by_step[s] = row
+            row = {"step": s}
+            traj.table.rows.append(row)
+            rows_by_step[s] = row
         row["t"] = fmt_t8(t_val) if t_val is not None else ""
         row["state"] = fmt_int(state)
         if t_val is not None:
@@ -124,15 +152,20 @@ def run_import_hop(task, args):
 
     traj.table.columns = list(cols_set)
     if times:
-        tmin = min(times); tmax = max(times); dur = tmax - tmin
+        tmin = min(times)
+        tmax = max(times)
+        dur = tmax - tmin
         traj.meta["t_min"] = fmt_t8(tmin)
         traj.meta["t_max"] = fmt_t8(tmax)
         traj.meta["duration"] = fmt_t8(dur)
     traj.meta["n_frames_hop"] = len(steps)
     traj.refresh_basic_meta()
 
-    proc.append(f"[Hop] 文件夹：{os.path.abspath(folder)}｜轨迹ID：{traj.traj_id}｜帧(Hop)：{len(steps)}")
+    proc.append(
+        f"[Hop] 文件夹：{os.path.abspath(folder)}｜轨迹ID：{traj.traj_id}｜帧(Hop)：{len(steps)}"
+    )
     return {"process": proc}
+
 
 PLUGINS = [
     {

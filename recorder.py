@@ -28,13 +28,11 @@ class ActionRecorder:
         lines.append("# -*- coding: utf-8 -*-")
         lines.append("import os, re, json, sys")
         lines.append("")
+        # hardcode project path so exported script can import md_manager reliably
         lines.append(
-            "# ensure project root is on sys.path so imports work when this script is run from a subdirectory"
+            "# hardcoded project path so imports work when this script is run from any directory"
         )
-        lines.append("here = os.path.dirname(os.path.abspath(__file__))")
-        lines.append("proj_root = os.path.abspath(os.path.join(here, '..'))")
-        lines.append("if proj_root not in sys.path:")
-        lines.append("    sys.path.insert(0, proj_root)")
+        lines.append("sys.path.insert(0, r'E:\\GitHub\\md_manager')")
         lines.append("")
         lines.append("import plugins")
         lines.append("import core")
@@ -48,7 +46,9 @@ class ActionRecorder:
         # Pre-scan history to identify import actions and plugin_run entries
         # that are covered by those imports. We'll skip emitting per-folder
         # plugin_run lines when an import (root+pattern) already covers them.
-        seen_imports = []  # list of (root_norm, compiled_regex, plugin_names)
+        seen_imports = (
+            []
+        )  # list of (root_norm, compiled_regex, plugin_names, subs_abs_set)
         for ev in self.history:
             if ev.get("action") != "import":
                 continue
@@ -56,6 +56,7 @@ class ActionRecorder:
             root = p.get("root")
             pattern = p.get("pattern")
             plugin_names = p.get("plugins") or []
+            subs = p.get("subs") or []
             try:
                 cre = re.compile(pattern)
             except Exception:
@@ -63,7 +64,19 @@ class ActionRecorder:
             if root:
                 r_abs = os.path.abspath(root)
                 r_norm = os.path.normcase(os.path.normpath(r_abs))
-                seen_imports.append((r_norm, cre, [str(n) for n in plugin_names]))
+                subs_set = set()
+                for s in subs:
+                    try:
+                        subs_set.add(
+                            os.path.normcase(
+                                os.path.normpath(os.path.abspath(os.path.join(root, s)))
+                            )
+                        )
+                    except Exception:
+                        pass
+                seen_imports.append(
+                    (r_norm, cre, [str(n) for n in plugin_names], subs_set)
+                )
 
         skip_plugin_run_idxs = set()
         for idx, ev in enumerate(self.history):
@@ -78,8 +91,13 @@ class ActionRecorder:
                 continue
             fa = os.path.normcase(os.path.normpath(os.path.abspath(folder_arg)))
             pname = p.get("plugin")
-            for r_norm, cre, plugin_names in seen_imports:
-                # match if folder is equal to root or under root
+            for r_norm, cre, plugin_names, subs_set in seen_imports:
+                # exact folder listed in import subs
+                if fa in subs_set:
+                    if not plugin_names or str(pname) in plugin_names:
+                        skip_plugin_run_idxs.add(idx)
+                        break
+                # match if folder is equal to root or under root and regex matches
                 if fa == r_norm or fa.startswith(r_norm + os.sep):
                     name = os.path.basename(fa)
                     if cre is None or (name and cre.match(name)):
@@ -103,10 +121,12 @@ class ActionRecorder:
                 )
                 lines.append(f"    rx = re.compile({json.dumps(pattern)})")
                 lines.append(
-                    f"    subs = sorted([d for d in os.listdir({json.dumps(root)}) if os.path.isdir(os.path.join({json.dumps(root)}, d)) and rx.match(d)])"
+                    f"    subs = sorted([d for d in os.listdir({ 'r'+json.dumps(root) }) if os.path.isdir(os.path.join({ 'r'+json.dumps(root) }, d)) and rx.match(d)])"
                 )
                 lines.append(f"    for d in subs:")
-                lines.append(f"        folder = os.path.join({json.dumps(root)}, d)")
+                lines.append(
+                    f"        folder = os.path.join({ 'r'+json.dumps(root) }, d)"
+                )
                 lines.append(
                     f"        for pname in {json.dumps(plugin_names, ensure_ascii=False)}:"
                 )
@@ -130,9 +150,21 @@ class ActionRecorder:
                 )
                 # Use the recorded args exactly as the user provided when running the plugin.
                 lines.append("    if plugin:")
-                lines.append(
-                    f"        result = plugin.run(task, {json.dumps(args, ensure_ascii=False)})"
-                )
+                # if args contains folder path, prefer raw-string literal for readability
+                try:
+                    args_json = json.dumps(args, ensure_ascii=False)
+                    if (
+                        isinstance(args, dict)
+                        and "folder" in args
+                        and isinstance(args.get("folder"), str)
+                    ):
+                        args_json = args_json.replace(
+                            json.dumps(args.get("folder")),
+                            "r" + json.dumps(args.get("folder")),
+                        )
+                except Exception:
+                    args_json = json.dumps(args, ensure_ascii=False)
+                lines.append(f"        result = plugin.run(task, {args_json})")
                 lines.append("        core.apply_plugin_result(task, result)")
                 lines.append("")
             elif a == "export":
@@ -160,7 +192,7 @@ class ActionRecorder:
                             )
                     lines.append("        rows.append(row)")
                     lines.append(
-                        f"    core.SimpleTable({json.dumps(cols)}, rows).to_csv({json.dumps(path)})"
+                        f"    core.SimpleTable({json.dumps(cols)}, rows).to_csv({ 'r'+json.dumps(path) })"
                     )
                     lines.append("")
                 elif ptype in ("traj_view", "traj_view_all"):
@@ -177,11 +209,27 @@ class ActionRecorder:
                         )
                         lines.append("    if t:")
                         lines.append(
-                            f"        core.SimpleTable({json.dumps(cols)}, t.table.rows).to_csv({json.dumps(path)})"
+                            f"        core.SimpleTable({json.dumps(cols)}, t.table.rows).to_csv({ 'r'+json.dumps(path) })"
                         )
                         lines.append("")
                 else:
                     lines.append(f"    # unknown export type {ptype} -> {path}")
+                    lines.append("")
+                if ptype == "task_params":
+                    # load task params file and apply to the task in replay
+                    lines.append(f"    # load task parameters from {path}")
+                    lines.append(f"    try:")
+                    lines.append(
+                        f"        with open({ 'r'+json.dumps(path) }, 'r', encoding='utf-8') as fh:"
+                    )
+                    lines.append(f"            payload = json.load(fh)")
+                    lines.append("        task.name = payload.get('name', task.name)")
+                    lines.append(
+                        "        task.settings.update(payload.get('settings', {}))"
+                    )
+                    lines.append("        task.meta.update(payload.get('meta', {}))")
+                    lines.append(f"    except Exception as __ex:")
+                    lines.append(f"        print('加载任务参数失败：', __ex)")
                     lines.append("")
             else:
                 lines.append(f"    # action {a} skipped")

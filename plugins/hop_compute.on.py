@@ -1,4 +1,3 @@
-
 # plugins/hop_compute.on.py
 # -*- coding: utf-8 -*-
 """
@@ -28,29 +27,43 @@ try:
     Trajectory  # type: ignore
     SimpleTable  # type: ignore
 except NameError:
-    import sys as _sys, os as _os
+    import os as _os
+    import sys as _sys
+
     _root = _os.path.dirname(_os.path.dirname(__file__))
     if _root not in _sys.path:
         _sys.path.insert(0, _root)
-    from md_manager import Trajectory, SimpleTable  # type: ignore
+    from md_manager import SimpleTable, Trajectory  # type: ignore
+
 
 def _to_float(v):
-    try: return float(v)
-    except Exception: return None
+    try:
+        return float(v)
+    except Exception:
+        return None
+
 
 def _to_int(v):
-    try: return int(str(v).strip())
-    except Exception: return None
+    try:
+        return int(str(v).strip())
+    except Exception:
+        return None
+
 
 def fmt_t8(x: float) -> str:
-    if x is None: return ""
+    if x is None:
+        return ""
     return f"{x:.8f}"
+
 
 def _find_time_column(traj):
     cols = traj.table.columns
-    if "t" in cols: return "t"
-    if "time" in cols: return "time"
+    if "t" in cols:
+        return "t"
+    if "time" in cols:
+        return "time"
     return None
+
 
 def run_hop(task, args):
     """
@@ -74,16 +87,20 @@ def run_hop(task, args):
         scol = "state" if "state" in traj.table.columns else None
         if tcol is None or scol is None:
             traj.meta["hop_info"] = None
-            proc.append(f"[Hop计算] 轨迹ID：{tid}｜缺列：{tcol or 't'} / {scol or 'state'}")
+            proc.append(
+                f"[Hop计算] 轨迹ID：{tid}｜缺列：{tcol or 't'} / {scol or 'state'}"
+            )
             continue
 
         # 最早 2->1
-        t1 = None; prev_state = None
+        t1 = None
+        prev_state = None
         for r in traj.table.rows:
             cur_state = _to_int(r.get(scol))
             cur_t = _to_float(r.get(tcol))
             if prev_state == 2 and cur_state == 1 and t1 is None:
-                t1 = cur_t; break
+                t1 = cur_t
+                break
             prev_state = cur_state
 
         # 最大时间
@@ -95,7 +112,11 @@ def run_hop(task, args):
         t_max_val = max(times) if times else None
 
         t2 = None
-        if (t_max_val is not None) and (max_time is not None) and (t_max_val < max_time):
+        if (
+            (t_max_val is not None)
+            and (max_time is not None)
+            and (t_max_val < max_time)
+        ):
             t2 = t_max_val
 
         if t1 is not None and t2 is not None:
@@ -114,6 +135,7 @@ def run_hop(task, args):
             task.settings["list_fields"] = fields
         proc.append(f"[Hop计算] 轨迹ID：{tid}｜hop_info：{hop_info}")
     return {"process": proc}
+
 
 PLUGINS = [
     {

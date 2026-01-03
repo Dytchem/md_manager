@@ -1,31 +1,22 @@
 # md_manager.py
 # -*- coding: utf-8 -*-
 
-import os
-import sys
 import csv
-import json
-import re
 import importlib.util
-from typing import Dict, List, Optional, Any, Tuple
-from recorder import ActionRecorder
-from core import (
-    format_value,
-    SimpleTable,
-    Trajectory,
-    Task,
-    parse_mixed_selection,
-    parse_tid_values,
-    parse_index_spec,
-    build_value_pred,
-    _natural_key_parts,
-    _apply_sort_dict_rows,
-)
-import viewer
-from viewer import TableViewer
-from ui_utils import clear_screen, pause, input_line, is_quit
+import json
+import os
+import re
+import sys
+from typing import Any, Dict, List, Optional, Tuple
 
+import viewer
 from cli import MDManagerCLI
+from core import (SimpleTable, Task, Trajectory, _apply_sort_dict_rows,
+                  _natural_key_parts, build_value_pred, format_value,
+                  parse_index_spec, parse_mixed_selection, parse_tid_values)
+from recorder import ActionRecorder
+from ui_utils import clear_screen, input_line, is_quit, pause
+from viewer import TableViewer
 
 
 # md_manager.py 作为兼容启动器，委托给 cli.MDManagerCLI

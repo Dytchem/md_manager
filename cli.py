@@ -1,26 +1,18 @@
 # cli.py
-from typing import List, Dict, Any, Optional
-import os
-import re
 import csv
 import json
-from core import (
-    format_value,
-    SimpleTable,
-    Trajectory,
-    Task,
-    parse_mixed_selection,
-    parse_tid_values,
-    parse_index_spec,
-    build_value_pred,
-    _natural_key_parts,
-    _apply_sort_dict_rows,
-    apply_plugin_result,
-)
+import os
+import re
+from typing import Any, Dict, List, Optional
+
+import viewer
+from core import (SimpleTable, Task, Trajectory, _apply_sort_dict_rows,
+                  _natural_key_parts, apply_plugin_result, build_value_pred,
+                  format_value, parse_index_spec, parse_mixed_selection,
+                  parse_tid_values)
 from plugins import PluginManager, prompt_args_by_input_spec
 from recorder import ActionRecorder
-from ui_utils import clear_screen, pause, input_line, is_quit
-import viewer
+from ui_utils import clear_screen, input_line, is_quit, pause
 
 
 class MDManagerCLI:
@@ -59,18 +51,10 @@ class MDManagerCLI:
             print(
                 f"任务名：{self.current_task.name}｜轨迹数：{len(self.current_task.trajectories)}"
             )
-            menu_items = [
-                "导入(i)",
-                "列表(l)",
-                "计算(c)",
-                "参数(p)",
-                "保存(s)",
-                "切换(w)",
-                "导出代码(o)",
-                "退出(q)",
-            ]
-            w = max(len(x) for x in menu_items) + 2
-            print(" | ".join(x.center(w) for x in menu_items))
+            # compact single-line main menu
+            print(
+                "导入(i) | 列表(l) | 计算(c) | 参数(p) | 保存(s) | 切换(w) | 导出代码(o) | 退出(q)"
+            )
 
             raw = input_line("> ").strip()
             if not raw:

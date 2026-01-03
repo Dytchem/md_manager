@@ -1,9 +1,10 @@
 # plugins.py
+import importlib.util
 import os
 import re
-import importlib.util
-from typing import List, Optional, Dict, Any
-from core import Trajectory, SimpleTable
+from typing import Any, Dict, List, Optional
+
+from core import SimpleTable, Trajectory
 from ui_utils import input_line
 
 
