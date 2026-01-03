@@ -1,3 +1,6 @@
 test
+__pycache__
 plugins/__pycache__
 tasks
+scripts
+smoke_data
