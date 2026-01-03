@@ -59,7 +59,16 @@ class MDManagerCLI:
             print(
                 f"任务名：{self.current_task.name}｜轨迹数：{len(self.current_task.trajectories)}"
             )
-            menu_items = ["导入(i)", "列表(l)", "计算(c)", "参数(p)", "保存(s)", "切换(w)", "导出代码(o)", "退出(q)"]
+            menu_items = [
+                "导入(i)",
+                "列表(l)",
+                "计算(c)",
+                "参数(p)",
+                "保存(s)",
+                "切换(w)",
+                "导出代码(o)",
+                "退出(q)",
+            ]
             w = max(len(x) for x in menu_items) + 2
             print(" | ".join(x.center(w) for x in menu_items))
 
@@ -152,7 +161,11 @@ class MDManagerCLI:
                     try:
                         self.recorder.record(
                             "plugin_run",
-                            {"plugin": plugin.name, "scope": plugin.scope, "args": {"folder": folder}},
+                            {
+                                "plugin": plugin.name,
+                                "scope": plugin.scope,
+                                "args": {"folder": folder},
+                            },
                         )
                     except Exception:
                         pass
@@ -236,7 +249,9 @@ class MDManagerCLI:
                 cols = ["键", "值"]
                 rows = [
                     {"键": k, "值": self.current_task.meta[k]}
-                    for k in sorted(self.current_task.meta.keys(), key=_natural_key_parts)
+                    for k in sorted(
+                        self.current_task.meta.keys(), key=_natural_key_parts
+                    )
                 ]
                 w = {c: len(c) for c in cols}
                 for r in rows:
@@ -254,7 +269,9 @@ class MDManagerCLI:
             if is_quit(cmd) or cmd in ("返回", "q"):
                 return
             elif cmd in ("导出", "e"):
-                path = input_line("输出参数文件（默认 task_params.json；输入 q 取消）：").strip()
+                path = input_line(
+                    "输出参数文件（默认 task_params.json；输入 q 取消）："
+                ).strip()
                 if is_quit(path):
                     continue
                 if not path:

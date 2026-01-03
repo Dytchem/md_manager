@@ -44,7 +44,9 @@ class TableViewer:
             print(f"{i}. {c}")
 
     @staticmethod
-    def _select_rows_by_spec_default_firstcol(rows_local: List[Dict[str, Any]], first_col: str, spec: str) -> List[Dict[str, Any]]:
+    def _select_rows_by_spec_default_firstcol(
+        rows_local: List[Dict[str, Any]], first_col: str, spec: str
+    ) -> List[Dict[str, Any]]:
         spec = (spec or "").strip()
         if not spec:
             return []
@@ -73,7 +75,12 @@ class TableViewer:
         return sel
 
     @staticmethod
-    def _select_rows_by_spec(rows_local: List[Dict[str, Any]], cols: List[str], spec: str, default_first_col: Optional[str] = None) -> List[Dict[str, Any]]:
+    def _select_rows_by_spec(
+        rows_local: List[Dict[str, Any]],
+        cols: List[str],
+        spec: str,
+        default_first_col: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         spec = (spec or "").strip()
         if not spec:
             return []
@@ -101,12 +108,24 @@ class TableViewer:
                             selected.append(r)
             return selected
         if default_first_col:
-            return TableViewer._select_rows_by_spec_default_firstcol(rows_local, default_first_col, spec)
+            return TableViewer._select_rows_by_spec_default_firstcol(
+                rows_local, default_first_col, spec
+            )
         idxs = parse_index_spec(spec, len(rows_local))
         return [rows_local[i - 1] for i in idxs]
 
     @staticmethod
-    def run(table: SimpleTable, default_columns: Optional[List[str]] = None, page_size: int = 20, title: str = "", export_all_handler=None, delete_handler=None, export_page_option: bool = True, recorder: Optional[ActionRecorder] = None, context: Optional[Dict[str, Any]] = None):
+    def run(
+        table: SimpleTable,
+        default_columns: Optional[List[str]] = None,
+        page_size: int = 20,
+        title: str = "",
+        export_all_handler=None,
+        delete_handler=None,
+        export_page_option: bool = True,
+        recorder: Optional[ActionRecorder] = None,
+        context: Optional[Dict[str, Any]] = None,
+    ):
         rows_local = list(table.rows)
         cols = default_columns or table.columns
         cols = [c for c in cols if c in table.columns]
@@ -126,15 +145,31 @@ class TableViewer:
             else:
                 s = page * ps
                 e = min(len(rows_local), (page + 1) * ps)
-                print(f"显示列：{', '.join(cols)} | 页：{page + 1}/{total} | 行：{s}-{e}")
+                print(
+                    f"显示列：{', '.join(cols)} | 页：{page + 1}/{total} | 行：{s}-{e}"
+                )
                 if sort_state["key"]:
-                    kw_tip = (f"，关键字优先：{sort_state['keyword']!r}" if sort_state["keyword"] else "")
+                    kw_tip = (
+                        f"，关键字优先：{sort_state['keyword']!r}"
+                        if sort_state["keyword"]
+                        else ""
+                    )
                     print(f"排序：{sort_state['key']}（{sort_state['order']}）{kw_tip}")
                 print("-" * 80)
                 TableViewer._print(cols, rows_local, s, e)
                 print("-" * 80)
 
-            menu_items = ["列设(c)", "下页(n)", "上页(p)", "行数(r)", "跳页(g)", "排序(s)", "抽取(x)", "导出(e)", "返回(q)"]
+            menu_items = [
+                "列设(c)",
+                "下页(n)",
+                "上页(p)",
+                "行数(r)",
+                "跳页(g)",
+                "排序(s)",
+                "抽取(x)",
+                "导出(e)",
+                "返回(q)",
+            ]
             if export_all_handler is not None:
                 menu_items.insert(-1, "全导(a)")
             if delete_handler is not None:
@@ -179,7 +214,11 @@ class TableViewer:
                         cols = [c for c in mixed if c in table.columns]
                     else:
                         toks = [t for t in re.split(r"[,\s]+", s.strip()) if t]
-                        cols = [cols_sorted[int(t) - 1] for t in toks if t.isdigit() and 1 <= int(t) <= len(cols_sorted)]
+                        cols = [
+                            cols_sorted[int(t) - 1]
+                            for t in toks
+                            if t.isdigit() and 1 <= int(t) <= len(cols_sorted)
+                        ]
             elif cmd == "s":
                 key = input_line("排序字段：")
                 if key not in table.columns:
@@ -194,12 +233,16 @@ class TableViewer:
                 rows_local = _apply_sort_dict_rows(rows_local, key, order, kw or None)
                 page = 0
             elif cmd == "x":
-                print(f"提示：默认按“{cols[0]}”筛选；其它列请用“列名=值”。行号用“#1,3,5-10”。")
+                print(
+                    f"提示：默认按“{cols[0]}”筛选；其它列请用“列名=值”。行号用“#1,3,5-10”。"
+                )
                 spec = input_line("抽取条件：")
                 if is_quit(spec):
                     continue
                 tmp_rows = [{c: r.get(c) for c in cols} for r in rows_local]
-                sel = TableViewer._select_rows_by_spec(tmp_rows, cols, spec, default_first_col=cols[0])
+                sel = TableViewer._select_rows_by_spec(
+                    tmp_rows, cols, spec, default_first_col=cols[0]
+                )
                 if not sel:
                     print("未匹配到条目")
                     pause()
@@ -226,7 +269,9 @@ class TableViewer:
                 if arg:
                     path = arg
                 else:
-                    path = input_line("输出CSV（默认 table_view.csv；输入 q 取消）：").strip()
+                    path = input_line(
+                        "输出CSV（默认 table_view.csv；输入 q 取消）："
+                    ).strip()
                 if is_quit(path):
                     continue
                 if not path:
@@ -236,14 +281,24 @@ class TableViewer:
                     print(f"已导出：{os.path.abspath(path)}")
                     try:
                         if recorder is not None:
-                            recorder.record("export", {"type": "traj_view", "path": os.path.abspath(path), "cols": cols, "context": context or {}})
+                            recorder.record(
+                                "export",
+                                {
+                                    "type": "traj_view",
+                                    "path": os.path.abspath(path),
+                                    "cols": cols,
+                                    "context": context or {},
+                                },
+                            )
                     except Exception:
                         pass
                 except Exception as ex:
                     print(f"导出失败：{ex}")
                 pause()
             elif cmd == "a" and export_all_handler is not None:
-                path = input_line("输出CSV（默认 all_trajs_view.csv；输入 q 取消)：").strip()
+                path = input_line(
+                    "输出CSV（默认 all_trajs_view.csv；输入 q 取消)："
+                ).strip()
                 if is_quit(path):
                     continue
                 if not path:
@@ -253,19 +308,31 @@ class TableViewer:
                     print(f"已导出：{os.path.abspath(path)}")
                     try:
                         if recorder is not None:
-                            recorder.record("export", {"type": "traj_view_all", "path": os.path.abspath(path), "cols": cols, "context": context or {}})
+                            recorder.record(
+                                "export",
+                                {
+                                    "type": "traj_view_all",
+                                    "path": os.path.abspath(path),
+                                    "cols": cols,
+                                    "context": context or {},
+                                },
+                            )
                     except Exception:
                         pass
                 except Exception as ex:
                     print(f"导出失败：{ex}")
                 pause()
             elif cmd == "d" and delete_handler is not None:
-                print(f"提示：默认按“{cols[0]}”筛选；其它列请用“列名=值”。行号用“#1,3,5-10”。")
+                print(
+                    f"提示：默认按“{cols[0]}”筛选；其它列请用“列名=值”。行号用“#1,3,5-10”。"
+                )
                 spec = input_line("删除条件：")
                 if is_quit(spec):
                     continue
                 tmp_rows = [{c: r.get(c) for c in cols} for r in rows_local]
-                matches = TableViewer._select_rows_by_spec(tmp_rows, cols, spec, default_first_col=cols[0])
+                matches = TableViewer._select_rows_by_spec(
+                    tmp_rows, cols, spec, default_first_col=cols[0]
+                )
                 if not matches:
                     print("未匹配到行")
                     pause()
@@ -310,7 +377,9 @@ def menu_trajectory_list(manager):
                     continue
                 row[f] = t.meta.get(f)
             rows.append(row)
-        return rows, ["traj_id", "name"] + [f for f in use_fields if f not in ("traj_id", "name")]
+        return rows, ["traj_id", "name"] + [
+            f for f in use_fields if f not in ("traj_id", "name")
+        ]
 
     rows_local, cols_local = build_rows(order_tids, fields)
 
@@ -330,12 +399,20 @@ def menu_trajectory_list(manager):
             print("（空）")
 
         if sort_state["key"]:
-            kw_tip = (f"，关键字优先：{sort_state['keyword']!r}" if sort_state["keyword"] else "")
-            print(f"\n页：{page + 1}/{total}；每页：{page_size}；排序：{sort_state['key']}（{sort_state['order']}）{kw_tip}")
+            kw_tip = (
+                f"，关键字优先：{sort_state['keyword']!r}"
+                if sort_state["keyword"]
+                else ""
+            )
+            print(
+                f"\n页：{page + 1}/{total}；每页：{page_size}；排序：{sort_state['key']}（{sort_state['order']}）{kw_tip}"
+            )
         else:
             print(f"\n页：{page + 1}/{total}；每页：{page_size}")
 
-        print("命令：查看(v)｜删除(d)｜列设(c)｜下页(n)｜上页(p)｜行数(r)｜跳页(g)｜排序(s)｜抽取(x)｜导出(e)｜返回(q)")
+        print(
+            "命令：查看(v)｜删除(d)｜列设(c)｜下页(n)｜上页(p)｜行数(r)｜跳页(g)｜排序(s)｜抽取(x)｜导出(e)｜返回(q)"
+        )
         cmd = input_line("> ").strip()
         if not cmd:
             continue
@@ -365,7 +442,14 @@ def menu_trajectory_list(manager):
         elif base == "c":
             # choose fields to display
             cols_all = ["traj_id", "name"]
-            calc_cols = sorted({k for t in manager.current_task.trajectories.values() for k in t.meta.keys()}, key=_natural_key_parts)
+            calc_cols = sorted(
+                {
+                    k
+                    for t in manager.current_task.trajectories.values()
+                    for k in t.meta.keys()
+                },
+                key=_natural_key_parts,
+            )
             for c in calc_cols:
                 if c not in cols_all:
                     cols_all.append(c)
@@ -375,7 +459,15 @@ def menu_trajectory_list(manager):
             if is_quit(s2) or not s2.strip():
                 continue
             mixed = parse_mixed_selection(s2, cols_sorted)
-            chosen = mixed if mixed else [c.strip() for c in re.split(r"[,\s]+", s2) if c.strip() and c.strip() in cols_sorted]
+            chosen = (
+                mixed
+                if mixed
+                else [
+                    c.strip()
+                    for c in re.split(r"[,\s]+", s2)
+                    if c.strip() and c.strip() in cols_sorted
+                ]
+            )
             manager.current_task.settings["list_fields"] = chosen
             fields = chosen[:]
             rows_local, cols_local = build_rows(order_tids, fields)
@@ -395,11 +487,15 @@ def menu_trajectory_list(manager):
                 sort_state = {"key": key, "order": order, "keyword": kw or None}
                 page = 0
         elif base == "x":
-            print(f"提示：默认按“{cols_local[0]}”筛选；其它列请用“列名=值”。行号用“#1,3,5-10”。")
+            print(
+                f"提示：默认按“{cols_local[0]}”筛选；其它列请用“列名=值”。行号用“#1,3,5-10”。"
+            )
             spec = input_line("抽取条件：")
             if is_quit(spec):
                 continue
-            sel = TableViewer._select_rows_by_spec(rows_local, cols_local, spec, default_first_col=cols_local[0])
+            sel = TableViewer._select_rows_by_spec(
+                rows_local, cols_local, spec, default_first_col=cols_local[0]
+            )
             if not sel:
                 print("未匹配到条目")
                 pause()
@@ -421,7 +517,14 @@ def menu_trajectory_list(manager):
                 SimpleTable(cols_local, rows_local).to_csv(path)
                 print(f"已导出：{os.path.abspath(path)}")
                 try:
-                    manager.recorder.record("export", {"type": "traj_list", "path": os.path.abspath(path), "cols": cols_local})
+                    manager.recorder.record(
+                        "export",
+                        {
+                            "type": "traj_list",
+                            "path": os.path.abspath(path),
+                            "cols": cols_local,
+                        },
+                    )
                 except Exception:
                     pass
             except Exception as ex:
@@ -436,7 +539,9 @@ def menu_trajectory_list(manager):
                 if tid_in in manager.current_task.trajectories:
                     target_tid = tid_in
             else:
-                matches = TableViewer._select_rows_by_spec(rows_local, cols_local, q, default_first_col=cols_local[0])
+                matches = TableViewer._select_rows_by_spec(
+                    rows_local, cols_local, q, default_first_col=cols_local[0]
+                )
                 if not matches:
                     print("未匹配到轨迹")
                     pause()
@@ -462,7 +567,9 @@ def menu_trajectory_list(manager):
                 continue
             menu_view_trajectory(manager, traj)
         elif base == "d":
-            print(f"提示：默认按“{cols_local[0]}”筛选；其它列请用“列名=值”。行号用“#1,3,5-10”。")
+            print(
+                f"提示：默认按“{cols_local[0]}”筛选；其它列请用“列名=值”。行号用“#1,3,5-10”。"
+            )
             q = arg if arg else input_line("删除条件：").strip()
             del_tids: List[str] = []
             if not q:
@@ -470,7 +577,9 @@ def menu_trajectory_list(manager):
                 options = list(manager.current_task.trajectories.keys())
                 del_tids = parse_tid_values(tid_in, options)
             else:
-                matches = TableViewer._select_rows_by_spec(rows_local, cols_local, q, default_first_col=cols_local[0])
+                matches = TableViewer._select_rows_by_spec(
+                    rows_local, cols_local, q, default_first_col=cols_local[0]
+                )
                 if not matches:
                     print("未匹配到轨迹")
                     pause()
@@ -480,7 +589,9 @@ def menu_trajectory_list(manager):
                 for i, r in enumerate(matches, 1):
                     name_val = r.get("name") or ""
                     print(f"{i}. [{r.get('traj_id')}] {name_val}")
-                sel = input_line("输入编号或轨ID（1,3,5 / 2-6 / all）：").strip().lower()
+                sel = (
+                    input_line("输入编号或轨ID（1,3,5 / 2-6 / all）：").strip().lower()
+                )
                 if sel == "all":
                     del_tids = opts
                 else:
@@ -491,7 +602,9 @@ def menu_trajectory_list(manager):
                 continue
             for tid in del_tids:
                 manager.current_task.remove_trajectory(tid)
-            order_tids = [tid for tid in order_tids if tid in manager.current_task.trajectories]
+            order_tids = [
+                tid for tid in order_tids if tid in manager.current_task.trajectories
+            ]
             rows_local, cols_local = build_rows(order_tids, fields)
             page = 0
 
@@ -517,7 +630,10 @@ def menu_view_trajectory(manager, traj):
             def export_all_handler(current_cols: List[str], out_path: str):
                 all_rows = []
                 header = ["traj_id"] + current_cols
-                for t in sorted(manager.current_task.trajectories.values(), key=lambda x: int(x.traj_id)):
+                for t in sorted(
+                    manager.current_task.trajectories.values(),
+                    key=lambda x: int(x.traj_id),
+                ):
                     for r in t.table.rows:
                         row = {"traj_id": t.traj_id}
                         for c in current_cols:
@@ -533,5 +649,15 @@ def menu_view_trajectory(manager, traj):
                 ids = set(id(r) for r in rows_to_del)
                 traj.table.rows = [r for r in traj.table.rows if id(r) not in ids]
 
-            TableViewer.run(SimpleTable(traj.table.columns, traj.table.rows), default_columns=cols, page_size=page, title=f"数据表：{traj.traj_id}", export_all_handler=export_all_handler, delete_handler=delete_handler, export_page_option=True, recorder=manager.recorder, context={"traj_id": traj.traj_id})
+            TableViewer.run(
+                SimpleTable(traj.table.columns, traj.table.rows),
+                default_columns=cols,
+                page_size=page,
+                title=f"数据表：{traj.traj_id}",
+                export_all_handler=export_all_handler,
+                delete_handler=delete_handler,
+                export_page_option=True,
+                recorder=manager.recorder,
+                context={"traj_id": traj.traj_id},
+            )
             continue
