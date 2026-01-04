@@ -203,8 +203,11 @@ class ActionRecorder:
                 root = p.get("root")
                 pattern = p.get("pattern")
                 plugin_names = p.get("plugins") or []
+                # Use raw string format (r"...") in comment for readability; pattern with regex special chars
+                root_repr = f'r"{root}"' if root else '""'
+                pattern_repr = f'"{pattern}"' if pattern else '""'
                 lines.append(
-                    f"    # import: root={json.dumps(root, ensure_ascii=False)} pattern={json.dumps(pattern, ensure_ascii=False)}"
+                    f"    # import: root={root_repr} pattern={pattern_repr}"
                 )
                 lines.append(f"    rx = re.compile({json.dumps(pattern, ensure_ascii=False)})")
                 root_abs = os.path.abspath(root) if root else root
