@@ -4,6 +4,7 @@ viewer.py - Interactive table viewer for trajectory and analysis results.
 Provides paginated text-based table browsing, row selection, sorting,
 and filtering capabilities for viewing analysis results.
 """
+
 import csv
 import os
 import re
@@ -26,6 +27,7 @@ from .ui_utils import clear_screen, input_line, is_quit, pause
 
 class TableViewer:
     """Interactive paginated table viewer with row selection, sorting, and filtering."""
+
     @staticmethod
     def _w(columns: List[str], rows: List[Dict[str, Any]]) -> Dict[str, int]:
         w = {c: len(c) for c in columns}

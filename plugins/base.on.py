@@ -4,6 +4,7 @@ base.on.py - Base plugin utilities and common helper functions.
 Provides utility functions for trajectory creation, data type conversion,
 and formatting that are used by other analysis plugins.
 """
+
 # -*- coding: utf-8 -*-
 
 import math

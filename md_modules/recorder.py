@@ -5,6 +5,7 @@ Records user interactions (imports, plugin runs, exports) and generates
 reproducible Python scripts that can replay the analysis pipeline.
 Exported scripts deduplicate paths using shared variables.
 """
+
 import datetime
 import json
 import os
@@ -18,7 +19,7 @@ class ActionRecorder:
 
     def record(self, action: str, params: Dict[str, Any]):
         """Record an action with its parameters in the history.
-        
+
         Args:
             action: Type of action (e.g., 'import', 'plugin_run', 'export')
             params: Action parameters (e.g., root path, plugin name, export type)
@@ -105,7 +106,9 @@ class ActionRecorder:
                             # (import subdirs are internally tracked but not exported)
                         except Exception:
                             pass
-                    seen_imports.append((r_norm, cre, [str(n) for n in plugin_names], subs_set))
+                    seen_imports.append(
+                        (r_norm, cre, [str(n) for n in plugin_names], subs_set)
+                    )
                     _add_path(root)
             elif ev.get("action") == "plugin_run":
                 p = ev.get("params") or {}
@@ -139,14 +142,18 @@ class ActionRecorder:
             candidates = []
         for folder_arg in candidates:
             try:
-                fa_norm = os.path.normcase(os.path.normpath(os.path.abspath(folder_arg)))
+                fa_norm = os.path.normcase(
+                    os.path.normpath(os.path.abspath(folder_arg))
+                )
             except Exception:
                 fa_norm = folder_arg
             covered = False
             for r_norm, cre, plugin_names, subs_set in seen_imports:
                 # if this folder is within the import root or one of its subs,
                 # skip adding it as a separate PATH
-                if fa_norm == r_norm or (isinstance(r_norm, str) and fa_norm.startswith(r_norm + os.sep)):
+                if fa_norm == r_norm or (
+                    isinstance(r_norm, str) and fa_norm.startswith(r_norm + os.sep)
+                ):
                     covered = True
                     break
                 if fa_norm in subs_set:
@@ -178,7 +185,9 @@ class ActionRecorder:
                     if not plugin_names or str(pname) in plugin_names:
                         skip_plugin_run_idxs.add(idx)
                         break
-                if fa == r_norm or (isinstance(r_norm, str) and fa.startswith(r_norm + os.sep)):
+                if fa == r_norm or (
+                    isinstance(r_norm, str) and fa.startswith(r_norm + os.sep)
+                ):
                     name = os.path.basename(fa)
                     if cre is None or (name and cre.match(name)):
                         if not plugin_names or str(pname) in plugin_names:
@@ -206,10 +215,10 @@ class ActionRecorder:
                 # Use raw string format (r"...") in comment for readability; pattern with regex special chars
                 root_repr = f'r"{root}"' if root else '""'
                 pattern_repr = f'"{pattern}"' if pattern else '""'
+                lines.append(f"    # import: root={root_repr} pattern={pattern_repr}")
                 lines.append(
-                    f"    # import: root={root_repr} pattern={pattern_repr}"
+                    f"    rx = re.compile({json.dumps(pattern, ensure_ascii=False)})"
                 )
-                lines.append(f"    rx = re.compile({json.dumps(pattern, ensure_ascii=False)})")
                 root_abs = os.path.abspath(root) if root else root
                 root_var = path_vars.get(root_abs) if root_abs else None
                 if root_var:
@@ -223,13 +232,19 @@ class ActionRecorder:
                         f"    subs = sorted([d for d in os.listdir({json.dumps(root, ensure_ascii=False)}) if os.path.isdir(os.path.join({json.dumps(root, ensure_ascii=False)}, d)) and rx.match(d)])"
                     )
                     lines.append(f"    for d in subs:")
-                    lines.append(f"        folder = os.path.join({json.dumps(root, ensure_ascii=False)}, d)")
-                lines.append(f"        for pname in {json.dumps(plugin_names, ensure_ascii=False)}:")
+                    lines.append(
+                        f"        folder = os.path.join({json.dumps(root, ensure_ascii=False)}, d)"
+                    )
+                lines.append(
+                    f"        for pname in {json.dumps(plugin_names, ensure_ascii=False)}:"
+                )
                 lines.append(
                     f"            plugin = next((pp for pp in pm.list_plugins(scope_filter='Import') if pp.name==pname), None)"
                 )
                 lines.append(f"            if plugin:")
-                lines.append("                result = plugin.run(task, {'folder': folder})")
+                lines.append(
+                    "                result = plugin.run(task, {'folder': folder})"
+                )
                 lines.append("                core.apply_plugin_result(task, result)")
                 lines.append("")
                 continue
@@ -257,7 +272,9 @@ class ActionRecorder:
                                 if var:
                                     parts.append(f"{json.dumps(k)}: {var}")
                                     continue
-                            parts.append(f"{json.dumps(k)}: {json.dumps(v, ensure_ascii=False)}")
+                            parts.append(
+                                f"{json.dumps(k)}: {json.dumps(v, ensure_ascii=False)}"
+                            )
                         args_json = "{" + ", ".join(parts) + "}"
                     else:
                         args_json = json.dumps(args, ensure_ascii=False)
@@ -293,7 +310,9 @@ class ActionRecorder:
                     p_abs = os.path.abspath(path) if path else path
                     pvar = path_vars.get(p_abs)
                     if pvar:
-                        lines.append(f"    core.SimpleTable({json.dumps(cols, ensure_ascii=False)}, rows).to_csv({pvar})")
+                        lines.append(
+                            f"    core.SimpleTable({json.dumps(cols, ensure_ascii=False)}, rows).to_csv({pvar})"
+                        )
                     else:
                         lines.append(
                             f"    core.SimpleTable({json.dumps(cols, ensure_ascii=False)}, rows).to_csv({json.dumps(path, ensure_ascii=False)})"
@@ -328,8 +347,13 @@ class ActionRecorder:
                     # Export all rows from all trajectories (全导：全部轨迹的全部数据行).
                     lines.append(f"    # export all trajs -> {path}")
                     lines.append("    all_rows = []")
-                    lines.append("    header = ['traj_id'] + " + json.dumps(cols, ensure_ascii=False))
-                    lines.append("    for t in sorted(task.trajectories.values(), key=lambda x: int(x.traj_id)):")
+                    lines.append(
+                        "    header = ['traj_id'] + "
+                        + json.dumps(cols, ensure_ascii=False)
+                    )
+                    lines.append(
+                        "    for t in sorted(task.trajectories.values(), key=lambda x: int(x.traj_id)):"
+                    )
                     lines.append("        for r in t.table.rows:")
                     lines.append("            row = {'traj_id': t.traj_id}")
                     for c in cols:
@@ -341,7 +365,9 @@ class ActionRecorder:
                     p_abs = os.path.abspath(path) if path else path
                     pvar = path_vars.get(p_abs)
                     if pvar:
-                        lines.append(f"    core.SimpleTable(header, all_rows).to_csv({pvar})")
+                        lines.append(
+                            f"    core.SimpleTable(header, all_rows).to_csv({pvar})"
+                        )
                     else:
                         lines.append(
                             f"    core.SimpleTable(header, all_rows).to_csv({json.dumps(path, ensure_ascii=False)})"
@@ -356,9 +382,15 @@ class ActionRecorder:
                         p_abs = os.path.abspath(path) if path else path
                         pvar = path_vars.get(p_abs)
                         target = pvar if pvar else json.dumps(path, ensure_ascii=False)
-                        lines.append(f"        payload = {{'name': task.name, 'settings': task.settings, 'meta': task.meta}}")
-                        lines.append(f"        with open({target}, 'w', encoding='utf-8') as fh:")
-                        lines.append("            json.dump(payload, fh, ensure_ascii=False, indent=2)")
+                        lines.append(
+                            f"        payload = {{'name': task.name, 'settings': task.settings, 'meta': task.meta}}"
+                        )
+                        lines.append(
+                            f"        with open({target}, 'w', encoding='utf-8') as fh:"
+                        )
+                        lines.append(
+                            "            json.dump(payload, fh, ensure_ascii=False, indent=2)"
+                        )
                         lines.append("    except Exception as __ex:")
                         lines.append("        print('写入任务参数失败：', __ex)")
                         lines.append("")

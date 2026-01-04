@@ -4,6 +4,7 @@ cli.py - Command-line interface for MD trajectory analysis.
 Provides interactive menus for loading datasets, running analysis plugins,
 viewing results, and exporting/importing data and task parameters.
 """
+
 import csv
 import json
 import os
@@ -31,6 +32,7 @@ from .ui_utils import clear_screen, input_line, is_quit, pause
 
 class MDManagerCLI:
     """Interactive CLI for trajectory analysis, plugin execution, and data export."""
+
     def __init__(self):
         self.current_task = Task(name="默认任务")
         self.tasks_root = "tasks"
