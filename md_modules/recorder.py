@@ -404,23 +404,9 @@ class ActionRecorder:
                         pvar = path_vars.get(p_abs)
                         target = pvar if pvar else json.dumps(path, ensure_ascii=False)
                         lines.append("    import csv")
-                        lines.append(
-                            "    cols = " + json.dumps(cols, ensure_ascii=False)
-                        )
-                        lines.append(
-                            "    rows = " + json.dumps(rows_data, ensure_ascii=False)
-                        )
-                        lines.append(
-                            "    with open("
-                            + target
-                            + ", 'w', newline='', encoding='utf-8') as fh:"
-                        )
-                        lines.append("        w = csv.DictWriter(fh, fieldnames=cols)")
-                        lines.append("        w.writeheader()")
-                        lines.append("        for r in rows:")
-                        lines.append(
-                            "            w.writerow({c: r.get(c) for c in cols})"
-                        )
+                        lines.append("    cols = " + json.dumps(cols, ensure_ascii=False))
+                        lines.append("    rows = " + json.dumps(rows_data, ensure_ascii=False))
+                        lines.append("    core.SimpleTable(cols, rows).to_csv(" + target + ")")
                         lines.append("")
                     elif ptype == "task_params":
                         # Export task parameters: write current task name, settings, and meta to JSON.
