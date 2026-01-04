@@ -296,31 +296,6 @@ class ActionRecorder:
                             f"    core.SimpleTable({json.dumps(cols, ensure_ascii=False)}, rows).to_csv({json.dumps(path, ensure_ascii=False)})"
                         )
                     lines.append("")
-                elif ptype == "traj_view_all":
-                    # Export all rows of a single trajectory (全导：单轨迹的全部数据行).
-                    tid = None
-                    if isinstance(ctx, dict):
-                        tid = ctx.get("traj_id")
-                    if tid is None:
-                        lines.append(f"    # skip export (no traj_id) -> {path}")
-                        lines.append("")
-                    else:
-                        lines.append(f"    # export traj {tid} -> {path}")
-                        lines.append(
-                            f"    t = task.trajectories.get({json.dumps(str(tid))})"
-                        )
-                        lines.append("    if t:")
-                        p_abs = os.path.abspath(path) if path else path
-                        pvar = path_vars.get(p_abs)
-                        if pvar:
-                            lines.append(
-                                f"        core.SimpleTable({json.dumps(cols, ensure_ascii=False)}, t.table.rows).to_csv({pvar})"
-                            )
-                        else:
-                            lines.append(
-                                f"        core.SimpleTable({json.dumps(cols, ensure_ascii=False)}, t.table.rows).to_csv({json.dumps(path, ensure_ascii=False)})"
-                            )
-                        lines.append("")
                 elif ptype == "traj_view":
                     # Export current page of a single trajectory (导出：单轨迹的当前页).
                     tid = None
@@ -346,6 +321,29 @@ class ActionRecorder:
                                 f"        core.SimpleTable({json.dumps(cols, ensure_ascii=False)}, t.table.rows).to_csv({json.dumps(path, ensure_ascii=False)})"
                             )
                         lines.append("")
+                elif ptype == "traj_view_all":
+                    # Export all rows from all trajectories (全导：全部轨迹的全部数据行).
+                    lines.append(f"    # export all trajs -> {path}")
+                    lines.append("    all_rows = []")
+                    lines.append("    header = ['traj_id'] + " + json.dumps(cols, ensure_ascii=False))
+                    lines.append("    for t in sorted(task.trajectories.values(), key=lambda x: int(x.traj_id)):")
+                    lines.append("        for r in t.table.rows:")
+                    lines.append("            row = {'traj_id': t.traj_id}")
+                    for c in cols:
+                        if c != "traj_id":
+                            lines.append(
+                                f"            row[{json.dumps(c)}] = r.get({json.dumps(c)}) if {json.dumps(c)} in t.table.columns else None"
+                            )
+                    lines.append("            all_rows.append(row)")
+                    p_abs = os.path.abspath(path) if path else path
+                    pvar = path_vars.get(p_abs)
+                    if pvar:
+                        lines.append(f"    core.SimpleTable(header, all_rows).to_csv({pvar})")
+                    else:
+                        lines.append(
+                            f"    core.SimpleTable(header, all_rows).to_csv({json.dumps(path, ensure_ascii=False)})"
+                        )
+                    lines.append("")
                 else:
                     # handle unknown export types gracefully
                     if ptype == "task_params":

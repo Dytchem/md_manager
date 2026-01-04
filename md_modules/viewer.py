@@ -663,12 +663,23 @@ def menu_view_trajectory(manager, traj):
             page = int(manager.current_task.settings.get("page_size", 20))
 
             def export_all_handler(current_cols: List[str], out_path: str):
-                # Export all rows of the current trajectory (single trajectory full export).
+                # Export all rows from all trajectories (全导：全部轨迹的全部数据行).
+                all_rows = []
+                header = ["traj_id"] + current_cols
+                for t in sorted(
+                    manager.current_task.trajectories.values(),
+                    key=lambda x: int(x.traj_id),
+                ):
+                    for r in t.table.rows:
+                        row = {"traj_id": t.traj_id}
+                        for c in current_cols:
+                            row[c] = r.get(c) if c in t.table.columns else None
+                        all_rows.append(row)
                 with open(out_path, "w", newline="", encoding="utf-8") as fh:
-                    w = csv.DictWriter(fh, fieldnames=current_cols)
+                    w = csv.DictWriter(fh, fieldnames=header)
                     w.writeheader()
-                    for r in traj.table.rows:
-                        w.writerow({c: r.get(c) for c in current_cols})
+                    for r in all_rows:
+                        w.writerow(r)
 
             def delete_handler(rows_to_del: List[Dict[str, Any]]):
                 ids = set(id(r) for r in rows_to_del)
