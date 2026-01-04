@@ -9,13 +9,8 @@ try:
     Trajectory  # type: ignore
     SimpleTable  # type: ignore
 except NameError:
-    import os as _os
-    import sys as _sys
-
-    _root = _os.path.dirname(_os.path.dirname(__file__))
-    if _root not in _sys.path:
-        _sys.path.insert(0, _root)
-    from md_manager import SimpleTable, Trajectory  # type: ignore
+    # 当插件独立运行或静态检查时，从 core 导入所需类型
+    from core import SimpleTable, Trajectory  # type: ignore
 
 
 def _to_float_once(v):
