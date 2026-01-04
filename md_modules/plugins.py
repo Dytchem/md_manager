@@ -29,7 +29,15 @@ class Plugin:
 class PluginManager:
     """Loads, manages, and discovers plugins from the plugins/ directory."""
 
-    def __init__(self, plugins_dir: str = "plugins"):
+    def __init__(self, plugins_dir: Optional[str] = None):
+        # Always resolve plugins relative to project root (sibling of md_modules).
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+        default_dir = os.path.join(base_dir, "plugins")
+        if not plugins_dir:
+            plugins_dir = default_dir
+        elif not os.path.isabs(plugins_dir):
+            plugins_dir = os.path.abspath(os.path.join(base_dir, plugins_dir))
+
         self.plugins_dir = plugins_dir
         self.plugins: List[Plugin] = []
 
