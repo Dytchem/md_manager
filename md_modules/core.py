@@ -1,11 +1,11 @@
-# core.py
-# 数据模型与通用工具
+"""Core data structures and shared helpers for trajectory analysis."""
+
 import csv
 import json
+import math
 import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
-import math
 
 
 def format_value(v: Any) -> str:
@@ -20,12 +20,14 @@ class SimpleTable:
         self.rows = list(rows)
 
     def select_columns(self, cols: Optional[List[str]] = None) -> "SimpleTable":
+        """Return a new table containing only the requested columns."""
         if not cols:
             return SimpleTable(self.columns, self.rows)
         cols2 = [c for c in cols if c in self.columns]
         return SimpleTable(cols2, [{c: r.get(c) for c in cols2} for r in self.rows])
 
     def to_csv(self, path: str, columns: Optional[List[str]] = None):
+        """Write the table to CSV, optionally narrowing the column set."""
         cols = columns or self.columns
         cols = [c for c in cols if c in self.columns]
         with open(path, "w", newline="", encoding="utf-8") as fh:
@@ -50,6 +52,7 @@ class Trajectory:
         self.refresh_basic_meta()
 
     def list_columns(self) -> List[str]:
+        """Return a copy of the column names for this trajectory."""
         return list(self.table.columns)
 
     def refresh_basic_meta(self):
@@ -57,6 +60,7 @@ class Trajectory:
         self.meta.setdefault("name", self.name)
 
     def save_to_folder(self, folder: str):
+        """Persist trajectory data and metadata under the given folder."""
         os.makedirs(folder, exist_ok=True)
         data = os.path.join(folder, f"data_{self.traj_id}.csv")
         meta = os.path.join(folder, f"meta_{self.traj_id}.json")
@@ -80,6 +84,7 @@ class Trajectory:
 
     @staticmethod
     def load_from_folder(folder: str, traj_id: str) -> "Trajectory":
+        """Load a trajectory (table + metadata) from a task folder."""
         data = os.path.join(folder, f"data_{traj_id}.csv")
         meta = os.path.join(folder, f"meta_{traj_id}.json")
         if not (os.path.isfile(data) and os.path.isfile(meta)):
@@ -104,12 +109,15 @@ class Task:
         self.time_table: SimpleTable = SimpleTable(["t"], [])
 
     def add_trajectory(self, traj: Trajectory):
+        """Register a trajectory under this task using its traj_id as key."""
         self.trajectories[traj.traj_id] = traj
 
     def remove_trajectory(self, traj_id: str):
+        """Remove a trajectory by ID if it exists."""
         self.trajectories.pop(traj_id, None)
 
     def next_traj_id(self) -> str:
+        """Generate the next incremental trajectory ID as a string."""
         m = 0
         for tid in self.trajectories.keys():
             try:
@@ -119,6 +127,7 @@ class Task:
         return str(m + 1)
 
     def list_trajs_table(self, fields: Optional[List[str]] = None) -> SimpleTable:
+        """Return a listing table of trajectories with selected metadata fields."""
         fields = fields or self.settings.get("list_fields") or ["traj_id", "name"]
         items = sorted(self.trajectories.values(), key=lambda t: int(t.traj_id))
         rows: List[Dict[str, Any]] = []
@@ -135,6 +144,7 @@ class Task:
         return SimpleTable(fields, rows)
 
     def to_dict(self) -> Dict[str, Any]:
+        """Serialize task metadata and trajectory IDs for saving."""
         return {
             "name": self.name,
             "settings": self.settings,
@@ -143,6 +153,7 @@ class Task:
         }
 
     def save(self, root: str = "tasks"):
+        """Save task and trajectories under the given root directory."""
         folder = os.path.join(root, self.name)
         os.makedirs(folder, exist_ok=True)
         with open(os.path.join(folder, "task.json"), "w", encoding="utf-8") as fh:
@@ -152,6 +163,7 @@ class Task:
 
     @staticmethod
     def load(name: str, root: str = "tasks") -> "Task":
+        """Load a task and its trajectories from disk."""
         folder = os.path.join(root, name)
         tj = os.path.join(folder, "task.json")
         if not os.path.isfile(tj):

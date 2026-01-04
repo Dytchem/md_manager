@@ -36,6 +36,7 @@ class ActionRecorder:
             pass
 
     def export_code(self, out_path: str):
+        """Generate a replayable Python script from recorded actions."""
         lines: List[str] = []
         lines.append("# -*- coding: utf-8 -*-")
         lines.append("import os, re, json, sys")

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+"""Per-frame expression evaluator plugin for trajectory rows."""
 
 import ast
 import math

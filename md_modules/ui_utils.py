@@ -1,4 +1,5 @@
-# ui_utils.py - minimal helpers
+"""Minimal console UI helpers for the CLI interface."""
+
 import os
 import sys
 

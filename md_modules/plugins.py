@@ -42,6 +42,7 @@ class PluginManager:
         self.plugins: List[Plugin] = []
 
     def load_plugins(self):
+        """Load .on.py plugins from the configured directory into memory."""
         self.plugins.clear()
         os.makedirs(self.plugins_dir, exist_ok=True)
         files = sorted(
@@ -71,6 +72,7 @@ class PluginManager:
                 print(f"[插件失败] {fname}: {ex}")
 
     def list_plugins(self, scope_filter: Optional[str] = None) -> List[Plugin]:
+        """Return loaded plugins, optionally filtered by scope string."""
         return (
             [p for p in self.plugins if p.scope == scope_filter]
             if scope_filter
@@ -79,6 +81,7 @@ class PluginManager:
 
 
 def prompt_args_by_input_spec(plugin: Plugin) -> Dict[str, Any]:
+    """Prompt the user for plugin arguments based on its input spec."""
     spec = plugin.input or {}
     mode = (spec.get("mode") or "form").lower()
     if mode == "line":
