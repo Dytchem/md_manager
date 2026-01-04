@@ -155,6 +155,8 @@ class TableViewer:
         export_page_option: bool = True,
         recorder: Optional[ActionRecorder] = None,
         context: Optional[Dict[str, Any]] = None,
+        export_type_page: str = "traj_view",
+        export_type_all: str = "traj_view_all",
     ):
         rows_local = list(table.rows)
         cols = default_columns or table.columns
@@ -314,7 +316,7 @@ class TableViewer:
                             recorder.record(
                                 "export",
                                 {
-                                    "type": "traj_view",
+                                    "type": export_type_page,
                                     "path": os.path.abspath(path),
                                     "cols": cols,
                                     "context": context or {},
@@ -341,7 +343,7 @@ class TableViewer:
                             recorder.record(
                                 "export",
                                 {
-                                    "type": "traj_view_all",
+                                    "type": export_type_all,
                                     "path": os.path.abspath(path),
                                     "cols": cols,
                                     "context": context or {},
@@ -446,7 +448,7 @@ def menu_trajectory_list(manager):
             print(f"\n页：{page + 1}/{total}；每页：{page_size}")
 
         print(
-            "命令：查看(v)｜删除(d)｜列设(c)｜下页(n)｜上页(p)｜行数(r)｜跳页(g)｜排序(s)｜抽取(x)｜导出(e)｜返回(q)"
+            "命令：查看(v)｜删除(d)｜列设(c)｜下页(n)｜上页(p)｜行数(r)｜跳页(g)｜排序(s)｜抽取(x)｜导出(e)｜时刻表(t)｜返回(q)"
         )
         cmd = input_line("> ").strip()
         if not cmd:
@@ -644,6 +646,40 @@ def menu_trajectory_list(manager):
             ]
             rows_local, cols_local = build_rows(order_tids, fields)
             page = 0
+        elif base == "t":
+            col = input_line("聚合列名（默认 x_1；输入 q 取消）：").strip()
+            if is_quit(col):
+                continue
+            if not col:
+                col = "x_1"
+            from .core import compute_time_series_mean_var
+
+            table, msgs = compute_time_series_mean_var(
+                manager.current_task, value_col=col, time_col="t"
+            )
+            if msgs:
+                for m in msgs:
+                    print(m)
+            if not table.rows:
+                pause()
+                continue
+
+            def export_type_handler(cols, path):
+                SimpleTable(cols, table.rows).to_csv(path, columns=cols)
+
+            TableViewer.run(
+                table,
+                default_columns=table.columns,
+                page_size=page_size,
+                title=f"=== 时刻聚合表（列：{col}）===",
+                export_all_handler=None,
+                delete_handler=None,
+                export_page_option=True,
+                recorder=manager.recorder,
+                context={"agg_col": col},
+                export_type_page="time_table",
+                export_type_all="time_table",
+            )
 
 
 def menu_view_trajectory(manager, traj):

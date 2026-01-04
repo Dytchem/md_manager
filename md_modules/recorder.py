@@ -62,7 +62,9 @@ class ActionRecorder:
         lines.append("        if parent == cwd:")
         lines.append("            break")
         lines.append("        cwd = parent")
-        lines.append("    raise RuntimeError('md_modules not found; please run from project directory')")
+        lines.append(
+            "    raise RuntimeError('md_modules not found; please run from project directory')"
+        )
         lines.append("")
         lines.append("_add_project_root()")
         lines.append("")
@@ -395,7 +397,21 @@ class ActionRecorder:
                     lines.append("")
                 else:
                     # handle unknown export types gracefully
-                    if ptype == "task_params":
+                    if ptype == "time_table":
+                        lines.append(f"    # export time table -> {path}")
+                        p_abs = os.path.abspath(path) if path else path
+                        pvar = path_vars.get(p_abs)
+                        target = pvar if pvar else json.dumps(path, ensure_ascii=False)
+                        lines.append("    import csv")
+                        lines.append("    cols = " + json.dumps(cols, ensure_ascii=False))
+                        lines.append("    rows = []  # populated at export time")
+                        lines.append("    with open(" + target + ", 'w', newline='', encoding='utf-8') as fh:")
+                        lines.append("        w = csv.DictWriter(fh, fieldnames=cols)")
+                        lines.append("        w.writeheader()")
+                        lines.append("        for r in rows:")
+                        lines.append("            w.writerow({c: r.get(c) for c in cols})")
+                        lines.append("")
+                    elif ptype == "task_params":
                         # Export task parameters: write current task name, settings, and meta to JSON.
                         lines.append(f"    # export task parameters -> {path}")
                         lines.append("    try:")

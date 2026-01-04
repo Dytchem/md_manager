@@ -5,6 +5,7 @@ import json
 import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
+import math
 
 
 def format_value(v: Any) -> str:
@@ -399,3 +400,78 @@ def apply_plugin_result(task: Task, result: Any):
     task_meta = result.get("task_meta") or {}
     for k, v in task_meta.items():
         task.meta[k] = v
+
+
+def compute_time_series_mean_var(
+    task: Task,
+    value_col: str,
+    time_col: str = "t",
+    tol: float = 1e-9,
+) -> Tuple[SimpleTable, List[str]]:
+    """Aggregate per-time mean/variance across trajectories.
+
+    Assumes all trajectories share aligned time points. If later time points are
+    missing in some trajectories, they are ignored with a warning. If time
+    misalignment is detected earlier, aggregation stops with a warning.
+    """
+
+    msgs: List[str] = []
+    trajs = sorted(task.trajectories.values(), key=lambda t: int(t.traj_id))
+    if not trajs:
+        return SimpleTable([time_col, "mean", "var"], []), ["无轨迹可聚合"]
+
+    # Extract time/value sequences per trajectory
+    series: List[List[Tuple[float, Optional[float]]]] = []
+    for t in trajs:
+        seq: List[Tuple[float, Optional[float]]] = []
+        for r in t.table.rows:
+            if time_col not in r:
+                continue
+            try:
+                tf = float(r.get(time_col))
+            except Exception:
+                continue
+            val_raw = r.get(value_col)
+            try:
+                vf = float(val_raw) if val_raw is not None else None
+            except Exception:
+                vf = None
+            seq.append((tf, vf))
+        if not seq:
+            msgs.append(f"轨迹 {t.traj_id} 缺少时间列 {time_col}，已忽略")
+            continue
+        series.append(seq)
+
+    if not series:
+        return SimpleTable([time_col, "mean", "var"], []), msgs or ["无有效序列"]
+
+    ref = series[0]
+    min_len = min(len(seq) for seq in series)
+    if any(len(seq) != min_len for seq in series[1:]):
+        msgs.append("提示：部分轨迹较短，尾部时刻已忽略")
+
+    rows: List[Dict[str, Any]] = []
+    for i in range(min_len):
+        t_ref = ref[i][0]
+        vals: List[float] = []
+        aligned = True
+        for seq in series:
+            t_i, v_i = seq[i]
+            if abs(t_i - t_ref) > tol:
+                msgs.append(
+                    f"警告：第 {i+1} 个时刻不一致（参考 {t_ref}，发现 {t_i}），已停止聚合"
+                )
+                aligned = False
+                break
+            if v_i is not None:
+                vals.append(v_i)
+        if not aligned:
+            break
+        if not vals:
+            continue
+        mean = sum(vals) / len(vals)
+        var = sum((x - mean) ** 2 for x in vals) / len(vals)
+        rows.append({time_col: t_ref, "mean": mean, "var": var})
+
+    table = SimpleTable([time_col, "mean", "var"], rows)
+    return table, msgs

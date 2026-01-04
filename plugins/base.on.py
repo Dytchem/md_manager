@@ -25,7 +25,59 @@ except NameError:
 def _to_float(v):
     """Convert value to float, returning None on failure."""
     try:
+    {
+        "name": "时刻均值方差",
+        "description": "跨轨迹按时刻聚合均值/方差（假设时间对齐）",
+        "scope": "Time-Series",
+        "run": None,  # placeholder; assigned after function is defined
+        "input": {
+            "mode": "line",
+            "help": "<列名>（按 t 聚合）",
+            "example": "x_1",
+        },
+    },
         return float(v)
+
+
+# ====== 新增：时刻聚合插件 ======
+
+
+def run_time_mean_var(task, args):
+    """Compute per-time mean/variance across trajectories for a given column."""
+
+    col = None
+    if isinstance(args, dict):
+        raw = args.get("__raw__") or args.get("col") or args.get("column")
+        if raw:
+            col = str(raw).strip()
+    if not col:
+        return {"process": ["列名不能为空"]}
+
+    from md_modules.core import compute_time_series_mean_var
+
+    table, msgs = compute_time_series_mean_var(task, value_col=col, time_col="t")
+    proc = msgs or []
+    proc.append(
+        f"已按列 {col} 聚合，生成 {len(table.rows)} 行（列：t, mean, var）"
+    )
+    return {
+        "process": proc,
+        "datasets": [
+            {
+                "name": f"time_stats_{col}",
+                "columns": table.columns,
+                "rows": table.rows,
+                "meta": {"source": "time_mean_var", "column": col},
+            }
+        ],
+    }
+
+
+# attach run to PLUGINS entry
+for p in PLUGINS:
+    if p.get("name") == "时刻均值方差":
+        p["run"] = run_time_mean_var
+        break
     except Exception:
         return None
 
