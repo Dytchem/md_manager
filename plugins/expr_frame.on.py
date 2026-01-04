@@ -10,7 +10,7 @@ try:
     SimpleTable  # type: ignore
 except NameError:
     # 当插件独立运行或静态检查时，从 core 导入所需类型
-    from core import SimpleTable, Trajectory  # type: ignore
+    from md_modules.core import SimpleTable, Trajectory  # type: ignore
 
 
 def _to_float_once(v):
