@@ -296,7 +296,8 @@ class ActionRecorder:
                             f"    core.SimpleTable({json.dumps(cols, ensure_ascii=False)}, rows).to_csv({json.dumps(path, ensure_ascii=False)})"
                         )
                     lines.append("")
-                elif ptype in ("traj_view", "traj_view_all"):
+                elif ptype == "traj_view_all":
+                    # Export all rows of a single trajectory (全导：单轨迹的全部数据行).
                     tid = None
                     if isinstance(ctx, dict):
                         tid = ctx.get("traj_id")
@@ -305,6 +306,31 @@ class ActionRecorder:
                         lines.append("")
                     else:
                         lines.append(f"    # export traj {tid} -> {path}")
+                        lines.append(
+                            f"    t = task.trajectories.get({json.dumps(str(tid))})"
+                        )
+                        lines.append("    if t:")
+                        p_abs = os.path.abspath(path) if path else path
+                        pvar = path_vars.get(p_abs)
+                        if pvar:
+                            lines.append(
+                                f"        core.SimpleTable({json.dumps(cols, ensure_ascii=False)}, t.table.rows).to_csv({pvar})"
+                            )
+                        else:
+                            lines.append(
+                                f"        core.SimpleTable({json.dumps(cols, ensure_ascii=False)}, t.table.rows).to_csv({json.dumps(path, ensure_ascii=False)})"
+                            )
+                        lines.append("")
+                elif ptype == "traj_view":
+                    # Export current page of a single trajectory (导出：单轨迹的当前页).
+                    tid = None
+                    if isinstance(ctx, dict):
+                        tid = ctx.get("traj_id")
+                    if tid is None:
+                        lines.append(f"    # skip export (no traj_id) -> {path}")
+                        lines.append("")
+                    else:
+                        lines.append(f"    # export traj {tid} page -> {path}")
                         lines.append(
                             f"    t = task.trajectories.get({json.dumps(str(tid))})"
                         )
