@@ -25,18 +25,9 @@ except NameError:
 def _to_float(v):
     """Convert value to float, returning None on failure."""
     try:
-    {
-        "name": "时刻均值方差",
-        "description": "跨轨迹按时刻聚合均值/方差（假设时间对齐）",
-        "scope": "Time-Series",
-        "run": None,  # placeholder; assigned after function is defined
-        "input": {
-            "mode": "line",
-            "help": "<列名>（按 t 聚合）",
-            "example": "x_1",
-        },
-    },
-        return float(v)
+        return float(str(v).strip())
+    except Exception:
+        return None
 
 
 # ====== 新增：时刻聚合插件 ======
@@ -57,29 +48,63 @@ def run_time_mean_var(task, args):
 
     table, msgs = compute_time_series_mean_var(task, value_col=col, time_col="t")
     proc = msgs or []
-    proc.append(
-        f"已按列 {col} 聚合，生成 {len(table.rows)} 行（列：t, mean, var）"
-    )
-    return {
-        "process": proc,
-        "datasets": [
-            {
-                "name": f"time_stats_{col}",
-                "columns": table.columns,
-                "rows": table.rows,
-                "meta": {"source": "time_mean_var", "column": col},
-            }
-        ],
-    }
-
-
-# attach run to PLUGINS entry
-for p in PLUGINS:
-    if p.get("name") == "时刻均值方差":
-        p["run"] = run_time_mean_var
-        break
+    proc.append(f"已按列 {col} 聚合，生成 {len(table.rows)} 行（列：t, mean, var）")
+    # Merge into task.time_table as new columns instead of adding a trajectory.
+    try:
+        tt = getattr(task, "time_table", None)
+        if not isinstance(tt, SimpleTable):
+            tt = SimpleTable(["t"], [])
+            task.time_table = tt
     except Exception:
-        return None
+        tt = SimpleTable(["t"], [])
+        task.time_table = tt
+
+    mean_col = f"mean_{col}"
+    var_col = f"var_{col}"
+
+    # build index by time for fast merge
+    idx = {}
+    for r in tt.rows:
+        key = str(r.get("t"))
+        idx[key] = r
+
+    for r in table.rows:
+        key = str(r.get("t"))
+        row = idx.get(key)
+        if row is None:
+            row = {"t": r.get("t")}
+            tt.rows.append(row)
+            idx[key] = row
+        row[mean_col] = r.get("mean")
+        row[var_col] = r.get("var")
+
+    # ensure columns list keeps t first and appends new columns
+    cols_set = [c for c in tt.columns if c != "t"]
+    for c in (mean_col, var_col):
+        if c not in cols_set:
+            cols_set.append(c)
+    tt.columns = ["t"] + cols_set
+
+    # sort rows by time if possible
+    def _as_float(v):
+        try:
+            return float(v)
+        except Exception:
+            return None
+
+    tt.rows.sort(
+        key=lambda r: (
+            _as_float(r.get("t")) is None,
+            (
+                _as_float(r.get("t"))
+                if _as_float(r.get("t")) is not None
+                else str(r.get("t"))
+            ),
+        )
+    )
+
+    proc.append(f"已写入时刻表列：{mean_col}, {var_col}")
+    return {"process": proc, "time_table_updated": True}
 
 
 def _to_int(v):
@@ -745,6 +770,17 @@ PLUGINS = [
             "mode": "line",
             "help": "<列名> [skip_none]，如：dist_1_2 false",
             "example": "dist_1_2",
+        },
+    },
+    {
+        "name": "时刻均值方差",
+        "description": "跨轨迹按时刻聚合均值/方差（假设时间对齐）",
+        "scope": "Time-Series",
+        "run": run_time_mean_var,
+        "input": {
+            "mode": "line",
+            "help": "<列名>（按 t 聚合）",
+            "example": "x_1",
         },
     },
     {

@@ -199,22 +199,29 @@ class MDManagerCLI:
             print("  f - 时刻参数（表行级）")
             print("  a - 轨迹参数（轨迹级）")
             print("  g - 任务参数（任务级）")
+            print("  t - 时刻聚合（跨轨迹）")
             print("  q - 返回")
-                print("  t - 时刻聚合（跨轨迹）")
             cat = input_line(" > ").strip().lower()
             if is_quit(cat) or cat in ("返回", "q"):
                 return
-            scope = (
-                if cat in ("时刻参数", "f"):
-                    scope = "Trajectory-Frame"
-                elif cat in ("轨迹参数", "a"):
-                    scope = "Trajectory-All"
-                elif cat in ("时刻聚合", "t"):
-                    scope = "Time-Series"
-                else:
-                    scope = "Task-Global"
+            if cat in ("时刻参数", "f"):
+                scope = "Trajectory-Frame"
+            elif cat in ("轨迹参数", "a"):
+                scope = "Trajectory-All"
+            elif cat in ("任务参数", "g"):
+                scope = "Task-Global"
+            elif cat in ("时刻聚合", "t"):
+                scope = "Time-Series"
+            else:
                 pause()
                 continue
+
+            clist = self.pm.list_plugins(scope_filter=scope)
+            if not clist:
+                print("暂无可用插件")
+                pause()
+                continue
+
             print("可用插件：")
             for i, p in enumerate(clist, 1):
                 print(f"{i}. {p.name} - {p.description}")

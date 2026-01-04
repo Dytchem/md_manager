@@ -313,15 +313,15 @@ class TableViewer:
                     print(f"已导出：{os.path.abspath(path)}")
                     try:
                         if recorder is not None:
-                            recorder.record(
-                                "export",
-                                {
-                                    "type": export_type_page,
-                                    "path": os.path.abspath(path),
-                                    "cols": cols,
-                                    "context": context or {},
-                                },
-                            )
+                            payload = {
+                                "type": export_type_page,
+                                "path": os.path.abspath(path),
+                                "cols": cols,
+                                "context": context or {},
+                            }
+                            if export_type_page == "time_table":
+                                payload["rows"] = rows_local
+                            recorder.record("export", payload)
                     except Exception:
                         pass
                 except Exception as ex:
@@ -647,36 +647,25 @@ def menu_trajectory_list(manager):
             rows_local, cols_local = build_rows(order_tids, fields)
             page = 0
         elif base == "t":
-            col = input_line("聚合列名（默认 x_1；输入 q 取消）：").strip()
-            if is_quit(col):
-                continue
-            if not col:
-                col = "x_1"
-            from .core import compute_time_series_mean_var
-
-            table, msgs = compute_time_series_mean_var(
-                manager.current_task, value_col=col, time_col="t"
-            )
-            if msgs:
-                for m in msgs:
-                    print(m)
-            if not table.rows:
+            tt = getattr(manager.current_task, "time_table", None)
+            if not isinstance(tt, SimpleTable) or not tt.rows:
+                print("暂无时刻聚合结果，请先运行聚合计算（计算菜单选择 t）。")
                 pause()
                 continue
 
-            def export_type_handler(cols, path):
-                SimpleTable(cols, table.rows).to_csv(path, columns=cols)
+            cols = manager.choose_columns(tt.columns)
+            page = int(manager.current_task.settings.get("page_size", 20))
 
             TableViewer.run(
-                table,
-                default_columns=table.columns,
-                page_size=page_size,
-                title=f"=== 时刻聚合表（列：{col}）===",
+                SimpleTable(tt.columns, tt.rows),
+                default_columns=cols,
+                page_size=page,
+                title="=== 时刻表 ===",
                 export_all_handler=None,
                 delete_handler=None,
                 export_page_option=True,
                 recorder=manager.recorder,
-                context={"agg_col": col},
+                context={"source": "time_table"},
                 export_type_page="time_table",
                 export_type_all="time_table",
             )

@@ -100,6 +100,8 @@ class Task:
         self.trajectories: Dict[str, Trajectory] = {}
         self.settings = {"list_fields": ["traj_id", "name"], "page_size": 20}
         self.meta: Dict[str, Any] = {}
+        # time-aligned table for aggregated per-time metrics (e.g., mean/var)
+        self.time_table: SimpleTable = SimpleTable(["t"], [])
 
     def add_trajectory(self, traj: Trajectory):
         self.trajectories[traj.traj_id] = traj
