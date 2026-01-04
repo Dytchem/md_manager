@@ -157,7 +157,7 @@ class TableViewer:
         context: Optional[Dict[str, Any]] = None,
         export_type_page: str = "traj_view",
         export_type_all: str = "traj_view_all",
-    ):
+    ) -> List[str]:
         rows_local = list(table.rows)
         cols = default_columns or table.columns
         cols = [c for c in cols if c in table.columns]
@@ -192,20 +192,20 @@ class TableViewer:
                 print("-" * 80)
 
             menu_items = [
+                "行设(r)",
                 "列设(c)",
-                "下页(n)",
-                "上页(p)",
-                "行数(r)",
-                "跳页(g)",
                 "排序(s)",
-                "抽取(x)",
+                "删行(dr)",
+                "删列(dc)",
                 "导出(e)",
+                "上页(p)",
+                "下页(n)",
+                "跳页(g)",
+                "页行(pr)",
                 "返回(q)",
             ]
             if export_all_handler is not None:
-                menu_items.insert(-1, "全导(a)")
-            if delete_handler is not None:
-                menu_items.insert(-1, "删行(d)")
+                menu_items.insert(-5, "全导(a)")  # 插入在导出后，上页前
             print("命令：" + "｜".join(menu_items))
 
             raw_cmd = input_line(" > ").strip()
@@ -216,28 +216,35 @@ class TableViewer:
             arg = parts[1].strip() if len(parts) > 1 else ""
 
             if cmd in ("q", "退出", "返回"):
-                return
+                return cols
             elif cmd == "n":
                 if page + 1 < refresh_total():
                     page += 1
             elif cmd == "p":
                 if page > 0:
                     page -= 1
-            elif cmd == "r":
-                new_ps = input_line("新的每页行数：")
+            elif cmd == "pr":
+                new_ps = arg if arg else input_line("新的每页行数：")
                 if new_ps.isdigit() and int(new_ps) > 0:
                     ps = int(new_ps)
                     page = 0
             elif cmd == "g":
-                to_page = input_line("跳转到第几页：")
-                if to_page.isdigit():
+                to_page = arg if arg else input_line("跳转到第几页：")
+                try:
                     tp = int(to_page)
-                    if 1 <= tp <= refresh_total():
-                        page = tp - 1
+                except ValueError:
+                    continue
+                total_pages = refresh_total()
+                if tp > 0:
+                    page = min(tp - 1, total_pages - 1)
+                elif tp < 0:
+                    abs_tp = abs(tp)
+                    page = max(total_pages - abs_tp, 0)
+                # tp == 0 is invalid, do nothing
             elif cmd == "c":
                 cols_sorted = sorted(table.columns, key=_natural_key_parts)
                 TableViewer._print_cols_with_idx(cols_sorted)
-                s = input_line("列编号或列名（空格/逗号；空=全部）：")
+                s = arg if arg else input_line("列编号或列名（空格/逗号；空=全部）：")
                 if not s.strip():
                     cols = list(table.columns)
                 else:
@@ -251,24 +258,57 @@ class TableViewer:
                             for t in toks
                             if t.isdigit() and 1 <= int(t) <= len(cols_sorted)
                         ]
+            elif cmd == "dc":
+                # Delete columns from view
+                s = (
+                    arg
+                    if arg
+                    else input_line("要删除的列（列名或正则，如 /x_.*/；空=取消）：")
+                )
+                if not s.strip():
+                    continue
+                to_remove = []
+                if s.startswith("/") and s.endswith("/"):
+                    pat = s[1:-1]
+                    try:
+                        cre = re.compile(pat)
+                        to_remove = [c for c in cols if cre.search(c)]
+                    except Exception as ex:
+                        print(f"正则无效：{ex}")
+                        pause()
+                        continue
+                else:
+                    # Exact match or comma separated
+                    toks = [t.strip() for t in s.split(",") if t.strip()]
+                    to_remove = [c for c in cols if c in toks]
+                if not to_remove:
+                    print("未匹配到列")
+                    pause()
+                    continue
+                cols = [c for c in cols if c not in to_remove]
+                print(f"已删除列：{', '.join(to_remove)}")
+                pause()
             elif cmd == "s":
-                key = input_line("排序字段：")
+                if arg:
+                    parts = arg.split()
+                    key = parts[0] if parts else None
+                    order = parts[1] if len(parts) > 1 else "asc"
+                    kw = parts[2] if len(parts) > 2 else None
+                else:
+                    key = input_line("排序字段：")
+                    order = input_line("顺序（asc/desc）：").lower() or "asc"
+                    kw = input_line("关键字（可空；命中者优先）：")
                 if key not in table.columns:
                     print("字段不存在")
                     pause()
                     continue
-                order = input_line("顺序（asc/desc）：").lower() or "asc"
                 if order not in ("asc", "desc"):
                     order = "asc"
-                kw = input_line("关键字（可空；命中者优先）：")
                 sort_state = {"key": key, "order": order, "keyword": kw or None}
                 rows_local = _apply_sort_dict_rows(rows_local, key, order, kw or None)
                 page = 0
-            elif cmd == "x":
-                print(
-                    f"提示：默认按“{cols[0]}”筛选；其它列请用“列名=值”。行号用“#1,3,5-10”。"
-                )
-                spec = input_line("抽取条件：")
+            elif cmd == "r":
+                spec = arg if arg else input_line("行设条件：")
                 if is_quit(spec):
                     continue
                 tmp_rows = [{c: r.get(c) for c in cols} for r in rows_local]
@@ -297,6 +337,41 @@ class TableViewer:
                         new_rows.append(r)
                 rows_local = new_rows
                 page = 0
+            elif cmd == "dr":
+                spec = arg if arg else input_line("删除条件：")
+                if is_quit(spec):
+                    continue
+                tmp_rows = [{c: r.get(c) for c in cols} for r in rows_local]
+                sel = TableViewer._select_rows_by_spec(
+                    tmp_rows, cols, spec, default_first_col=cols[0]
+                )
+                if not sel:
+                    print("未匹配到条目")
+                    pause()
+                    continue
+                # Remove matching rows
+                to_remove = []
+                for srow in sel:
+                    for i, r in enumerate(rows_local):
+                        ok = True
+                        for c in cols:
+                            if str(srow.get(c)) != str(r.get(c)):
+                                ok = False
+                                break
+                        if ok:
+                            to_remove.append(r)
+                            break
+                if delete_handler is not None:
+                    try:
+                        delete_handler(to_remove)
+                    except Exception as ex:
+                        print(f"删除失败：{ex}")
+                        pause()
+                        continue
+                rows_local = [r for r in rows_local if r not in to_remove]
+                print(f"已删除 {len(to_remove)} 行")
+                page = 0
+                pause()
             elif cmd == "e":
                 if arg:
                     path = arg
@@ -328,9 +403,13 @@ class TableViewer:
                     print(f"导出失败：{ex}")
                 pause()
             elif cmd == "a" and export_all_handler is not None:
-                path = input_line(
-                    "输出CSV（默认 all_trajs_view.csv；输入 q 取消)："
-                ).strip()
+                path = (
+                    arg
+                    if arg
+                    else input_line(
+                        "输出CSV（默认 all_trajs_view.csv；输入 q 取消)："
+                    ).strip()
+                )
                 if is_quit(path):
                     continue
                 if not path:
@@ -354,7 +433,7 @@ class TableViewer:
                 except Exception as ex:
                     print(f"导出失败：{ex}")
                 pause()
-            elif cmd == "d" and delete_handler is not None:
+            elif cmd == "dr":
                 print(
                     f"提示：默认按“{cols[0]}”筛选；其它列请用“列名=值”。行号用“#1,3,5-10”。"
                 )
@@ -448,7 +527,7 @@ def menu_trajectory_list(manager):
             print(f"\n页：{page + 1}/{total}；每页：{page_size}")
 
         print(
-            "命令：查看(v)｜删除(d)｜列设(c)｜下页(n)｜上页(p)｜行数(r)｜跳页(g)｜排序(s)｜抽取(x)｜导出(e)｜时刻表(t)｜返回(q)"
+            "命令：查看(v)｜时刻表(t)｜行设(r)｜列设(c)｜排序(s)｜删行(dr)｜删列(dc)｜导出(e)｜上页(p)｜下页(n)｜跳页(g)｜页行(pr)｜返回(q)"
         )
         cmd = input_line("> ").strip()
         if not cmd:
@@ -465,17 +544,23 @@ def menu_trajectory_list(manager):
         elif base == "p":
             if page > 0:
                 page -= 1
-        elif base == "r":
-            new_ps = input_line("新的每页行数：")
+        elif base == "pr":
+            new_ps = arg if arg else input_line("新的每页行数：")
             if new_ps.isdigit() and int(new_ps) > 0:
                 page_size = int(new_ps)
                 page = 0
         elif base == "g":
-            to_page = input_line("跳转到第几页：")
-            if to_page.isdigit():
+            to_page = arg if arg else input_line("跳转到第几页：")
+            try:
                 tp = int(to_page)
-                if 1 <= tp <= total:
-                    page = tp - 1
+            except ValueError:
+                continue
+            if tp > 0:
+                page = min(tp - 1, total - 1)
+            elif tp < 0:
+                abs_tp = abs(tp)
+                page = max(total - abs_tp, 0)
+            # tp == 0 is invalid, do nothing
         elif base == "c":
             # choose fields to display
             cols_all = ["traj_id", "name"]
@@ -509,27 +594,64 @@ def menu_trajectory_list(manager):
             fields = chosen[:]
             rows_local, cols_local = build_rows(order_tids, fields)
             page = 0
+        elif base == "dc":
+            s = (
+                arg
+                if arg
+                else input_line("要删除的列（列名或正则，如 /name/；空=取消）：")
+            )
+            if not s.strip():
+                continue
+            to_remove = []
+            if s.startswith("/") and s.endswith("/"):
+                pat = s[1:-1]
+                try:
+                    cre = re.compile(pat)
+                    to_remove = [c for c in cols_local if cre.search(c)]
+                except Exception as ex:
+                    print(f"正则无效：{ex}")
+                    pause()
+                    continue
+            else:
+                # Exact match or comma separated
+                toks = [t.strip() for t in s.split(",") if t.strip()]
+                to_remove = [c for c in cols_local if c in toks]
+            if not to_remove:
+                print("未匹配到列")
+                pause()
+                continue
+            cols_local = [c for c in cols_local if c not in to_remove]
+            fields = cols_local[:]  # update fields to match
+            manager.current_task.settings["list_fields"] = fields
+            print(f"已删除列：{', '.join(to_remove)}")
+            pause()
         elif base == "s":
-            key = input_line("排序字段：")
+            if arg:
+                parts = arg.split()
+                key = parts[0] if parts else None
+                order = parts[1] if len(parts) > 1 else "asc"
+            else:
+                key = input_line("排序字段：")
+                order = input_line("顺序（asc/desc）：").lower() or "asc"
             if key and key not in cols_local:
                 print("字段不在当前显示列（排序未更改）。")
                 pause()
                 continue
-            order = input_line("顺序（asc/desc）：").lower() or "asc"
             if order not in ("asc", "desc"):
                 order = "asc"
-            kw = input_line("关键字（可空；命中者优先）：")
+            kw = (
+                parts[2]
+                if arg and len(parts) > 2
+                else (input_line("关键字（可空；命中者优先）：") if not arg else None)
+            )
             if key:
                 rows_local = _apply_sort_dict_rows(rows_local, key, order, kw or None)
                 sort_state = {"key": key, "order": order, "keyword": kw or None}
                 # update ordering to preserve current sorted order for subsequent ops
                 order_tids = [str(r.get("traj_id")) for r in rows_local]
                 page = 0
-        elif base == "x":
-            print(
-                f"提示：默认按“{cols_local[0]}”筛选；其它列请用“列名=值”。行号用“#1,3,5-10”。"
-            )
-            spec = input_line("抽取条件：")
+        elif base == "r":
+            spec = arg if arg else input_line("行设条件：")
             if is_quit(spec):
                 continue
             sel = TableViewer._select_rows_by_spec(
@@ -547,7 +669,11 @@ def menu_trajectory_list(manager):
             rows_local, cols_local = build_rows(order_tids, fields)
             page = 0
         elif base == "e":
-            path = input_line("输出CSV（默认 traj_list.csv；输入 q 取消）：").strip()
+            path = (
+                arg
+                if arg
+                else input_line("输出CSV（默认 traj_list.csv；输入 q 取消）：").strip()
+            )
             if is_quit(path):
                 continue
             if not path:
@@ -605,11 +731,10 @@ def menu_trajectory_list(manager):
                 pause()
                 continue
             menu_view_trajectory(manager, traj)
-        elif base == "d":
-            print(
-                f"提示：默认按“{cols_local[0]}”筛选；其它列请用“列名=值”。行号用“#1,3,5-10”。"
-            )
+        elif base == "dr":
             q = arg if arg else input_line("删除条件：").strip()
+            if is_quit(q):
+                continue
             del_tids: List[str] = []
             if not q:
                 tid_in = input_line("轨迹ID（逗号/范围，如 10-20）：").strip()
@@ -653,7 +778,12 @@ def menu_trajectory_list(manager):
                 pause()
                 continue
 
-            cols = manager.choose_columns(tt.columns)
+            saved_cols = manager.current_task.settings.get("time_table_columns")
+            if saved_cols and all(c in tt.columns for c in saved_cols):
+                cols = saved_cols
+            else:
+                cols = manager.choose_columns(tt.columns)
+                manager.current_task.settings["time_table_columns"] = cols
             page_size_tt = int(manager.current_task.settings.get("page_size", 20))
 
             TableViewer.run(
@@ -669,6 +799,8 @@ def menu_trajectory_list(manager):
                 export_type_page="time_table",
                 export_type_all="time_table",
             )
+            # Update saved columns after viewer exits
+            manager.current_task.settings["time_table_columns"] = cols
 
 
 def menu_view_trajectory(manager, traj):
@@ -686,7 +818,12 @@ def menu_view_trajectory(manager, traj):
             return
         elif cmd in ("表视图", "t"):
             all_cols = traj.list_columns()
-            cols = manager.choose_columns(all_cols)
+            saved_cols = manager.current_task.settings.get("traj_table_columns")
+            if saved_cols and all(c in all_cols for c in saved_cols):
+                cols = saved_cols
+            else:
+                cols = manager.choose_columns(all_cols)
+                manager.current_task.settings["traj_table_columns"] = cols
             page = int(manager.current_task.settings.get("page_size", 20))
 
             def export_all_handler(current_cols: List[str], out_path: str):
@@ -723,4 +860,6 @@ def menu_view_trajectory(manager, traj):
                 recorder=manager.recorder,
                 context={"traj_id": traj.traj_id},
             )
+            # Update saved columns after viewer exits
+            manager.current_task.settings["traj_table_columns"] = cols
             continue

@@ -145,12 +145,18 @@ class Task:
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize task metadata and trajectory IDs for saving."""
-        return {
+        d = {
             "name": self.name,
             "settings": self.settings,
             "traj_ids": list(self.trajectories.keys()),
             "meta": self.meta,
         }
+        if hasattr(self, "time_table") and self.time_table:
+            d["time_table"] = {
+                "columns": self.time_table.columns,
+                "rows": self.time_table.rows,
+            }
+        return d
 
     def save(self, root: str = "tasks"):
         """Save task and trajectories under the given root directory."""
@@ -173,6 +179,11 @@ class Task:
         task = Task(tjson.get("name", name))
         task.settings = tjson.get("settings", task.settings)
         task.meta = tjson.get("meta", {})
+        if "time_table" in tjson:
+            tt_data = tjson["time_table"]
+            task.time_table = SimpleTable(
+                tt_data.get("columns", []), tt_data.get("rows", [])
+            )
         for tid in tjson.get("traj_ids", []):
             task.add_trajectory(Trajectory.load_from_folder(folder, tid))
         return task

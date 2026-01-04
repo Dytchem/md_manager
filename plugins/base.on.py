@@ -10,6 +10,7 @@ and formatting that are used by other analysis plugins.
 import math
 import os
 import re
+from collections import defaultdict
 from typing import Any, Dict, List, Tuple
 
 # Plugin loader injects Trajectory and SimpleTable at runtime.
@@ -37,18 +38,61 @@ def run_time_mean_var(task, args):
     """Compute per-time mean/variance across trajectories for a given column."""
 
     col = None
+    warn_missing = False
     if isinstance(args, dict):
         raw = args.get("__raw__") or args.get("col") or args.get("column")
         if raw:
             col = str(raw).strip()
+        warn_missing = str(args.get("warn_missing", "false")).lower() == "true"
+        if not col and raw:
+            # 解析 raw 中的参数
+            parts = raw.split()
+            col = parts[0] if parts else None
+            for part in parts[1:]:
+                if part.lower() in ("warn_missing", "warn"):
+                    warn_missing = True
+                elif part.lower() == "no_warn":
+                    warn_missing = False
     if not col:
         return {"process": ["列名不能为空"]}
 
-    from md_modules.core import compute_time_series_mean_var
+    # 手动计算时刻聚合，支持缺失轨迹
+    time_data: Dict[float, List[float]] = defaultdict(list)
+    total_trajs = len(task.trajectories)
 
-    table, msgs = compute_time_series_mean_var(task, value_col=col, time_col="t")
-    proc = msgs or []
-    proc.append(f"已按列 {col} 聚合，生成 {len(table.rows)} 行（列：t, mean, var）")
+    for traj in task.trajectories.values():
+        if col not in traj.table.columns:
+            continue
+        for r in traj.table.rows:
+            t_val = _to_float(r.get("t"))
+            v_val = _to_float(r.get(col))
+            if t_val is not None and v_val is not None:
+                time_data[t_val].append(v_val)
+
+    if not time_data:
+        return {"process": [f"列 {col} 无有效数据"]}
+
+    proc = []
+    rows = []
+    missing_warnings = []
+    for t, vals in sorted(time_data.items()):
+        count = len(vals)
+        if count == 0:
+            continue
+        mean = sum(vals) / count
+        var = sum((x - mean) ** 2 for x in vals) / count if count > 1 else None
+        rows.append({"t": t, "mean": mean, "var": var, "count": count})
+        if warn_missing and count < total_trajs:
+            missing_warnings.append(f"时刻 {fmt_t8(t)}: {count}/{total_trajs} 轨迹")
+
+    proc.append(f"已按列 {col} 聚合，生成 {len(rows)} 行（列：t, mean, var）")
+    if warn_missing:
+        if missing_warnings:
+            proc.append("警告：以下时刻轨迹不完整（使用剩余轨迹计算）：")
+            proc.extend(missing_warnings)
+        else:
+            proc.append("所有时刻轨迹完整。")
+
     # Merge into task.time_table as new columns instead of adding a trajectory.
     try:
         tt = getattr(task, "time_table", None)
@@ -68,15 +112,15 @@ def run_time_mean_var(task, args):
         key = str(r.get("t"))
         idx[key] = r
 
-    for r in table.rows:
+    for r in rows:
         key = str(r.get("t"))
         row = idx.get(key)
         if row is None:
             row = {"t": r.get("t")}
             tt.rows.append(row)
             idx[key] = row
-        row[mean_col] = r.get("mean")
-        row[var_col] = r.get("var")
+        row[mean_col] = fmt_f10(r.get("mean"))
+        row[var_col] = fmt_f10(r.get("var")) if r.get("var") is not None else None
 
     # ensure columns list keeps t first and appends new columns
     cols_set = [c for c in tt.columns if c != "t"]
@@ -774,13 +818,13 @@ PLUGINS = [
     },
     {
         "name": "时刻均值方差",
-        "description": "跨轨迹按时刻聚合均值/方差（假设时间对齐）",
+        "description": "跨轨迹按时刻聚合均值/方差（假设时间对齐，支持缺失轨迹）",
         "scope": "Time-Series",
         "run": run_time_mean_var,
         "input": {
             "mode": "line",
-            "help": "<列名>（按 t 聚合）",
-            "example": "x_1",
+            "help": "<列名> [warn_missing]（按 t 聚合；warn_missing=true 警告缺失轨迹时刻）",
+            "example": "x_1 warn_missing",
         },
     },
     {
