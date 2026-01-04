@@ -1,4 +1,9 @@
-# cli.py (package version)
+"""
+cli.py - Command-line interface for MD trajectory analysis.
+
+Provides interactive menus for loading datasets, running analysis plugins,
+viewing results, and exporting/importing data and task parameters.
+"""
 import csv
 import json
 import os
@@ -25,6 +30,7 @@ from .ui_utils import clear_screen, input_line, is_quit, pause
 
 
 class MDManagerCLI:
+    """Interactive CLI for trajectory analysis, plugin execution, and data export."""
     def __init__(self):
         self.current_task = Task(name="默认任务")
         self.tasks_root = "tasks"
@@ -34,6 +40,7 @@ class MDManagerCLI:
 
     @staticmethod
     def choose_columns(all_columns: List[str]) -> List[str]:
+        """Prompt user to select columns for table display by name or index."""
         clear_screen()
         print("选择显示列（空格/逗号均可；可混合序号与列名；空=精简）")
         ordered = sorted(all_columns, key=_natural_key_parts)

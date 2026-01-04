@@ -1,4 +1,10 @@
-# recorder.py (package)
+"""
+recorder.py - Trajectory analysis action recorder and export code generator.
+
+Records user interactions (imports, plugin runs, exports) and generates
+reproducible Python scripts that can replay the analysis pipeline.
+Exported scripts deduplicate paths using shared variables.
+"""
 import datetime
 import json
 import os
@@ -11,6 +17,12 @@ class ActionRecorder:
         self.history: List[Dict[str, Any]] = []
 
     def record(self, action: str, params: Dict[str, Any]):
+        """Record an action with its parameters in the history.
+        
+        Args:
+            action: Type of action (e.g., 'import', 'plugin_run', 'export')
+            params: Action parameters (e.g., root path, plugin name, export type)
+        """
         try:
             self.history.append(
                 {
@@ -26,20 +38,6 @@ class ActionRecorder:
         lines: List[str] = []
         lines.append("# -*- coding: utf-8 -*-")
         lines.append("import os, re, json, sys")
-        # emit path variable definitions near the top of main()
-        if path_order:
-            try:
-                insert_at = lines.index("    pm.load_plugins()") + 1
-            except ValueError:
-                insert_at = 4
-            defs = ["    # path variables used below:"]
-            for pth in path_order:
-                var = path_vars.get(pth)
-                if var:
-                    defs.append(f"    {var} = {json.dumps(pth, ensure_ascii=False)}")
-            for i, d in enumerate(reversed(defs)):
-                lines.insert(insert_at, d)
-
         lines.append("")
         # hardcode project path so exported script can import md_manager reliably
         lines.append(
@@ -57,12 +55,14 @@ class ActionRecorder:
         lines.append("    task = core.Task('replay_task')")
         lines.append("")
 
-        # Pre-scan history to identify import actions and plugin_run entries
-        # and collect all file-system paths that appear so we can define
-        # shared variables for them in the exported script.
+        # Phase 1: Scan history to extract paths for deduplication.
+        # We identify import roots and export targets, then generate deduplicated
+        # PATH_N variables to avoid repeating identical paths in the output script.
         seen_imports = []
         path_order: List[str] = []
-        path_set: set = set()
+        # keep a normalized key set to deduplicate across case/sep differences
+        path_norm_set: set = set()
+        norm_to_original: Dict[str, str] = {}
 
         def _add_path(pth: Optional[str]):
             if not pth:
@@ -71,8 +71,13 @@ class ActionRecorder:
                 a = os.path.abspath(pth)
             except Exception:
                 a = pth
-            if a not in path_set:
-                path_set.add(a)
+            try:
+                a_norm = os.path.normcase(os.path.normpath(a))
+            except Exception:
+                a_norm = a
+            if a_norm not in path_norm_set:
+                path_norm_set.add(a_norm)
+                norm_to_original[a_norm] = a
                 path_order.append(a)
 
         for ev in self.history:
@@ -96,7 +101,8 @@ class ActionRecorder:
                                 os.path.normpath(os.path.abspath(os.path.join(root, s)))
                             )
                             subs_set.add(full)
-                            _add_path(full)
+                            # Skip adding per-subdir paths to avoid bloating PATH vars.
+                            # (import subdirs are internally tracked but not exported)
                         except Exception:
                             pass
                     seen_imports.append((r_norm, cre, [str(n) for n in plugin_names], subs_set))
@@ -107,14 +113,50 @@ class ActionRecorder:
                 if isinstance(args, dict):
                     folder_arg = args.get("folder")
                     if isinstance(folder_arg, str):
-                        _add_path(folder_arg)
+                        # Defer plugin_run folder addition: check later if it is
+                        # covered by an import root to avoid redundant PATH variables.
+                        try:
+                            plugin_folder_candidates.append(folder_arg)
+                        except NameError:
+                            plugin_folder_candidates = [folder_arg]
             elif ev.get("action") == "export":
                 p = ev.get("params") or {}
                 _add_path(p.get("path"))
             elif ev.get("action") == "task_params":
                 p = ev.get("params") or {}
                 _add_path(p.get("path"))
+        # Include project root to ensure exported scripts can load the md_modules package.
+        try:
+            _add_path(os.path.abspath(os.getcwd()))
+        except Exception:
+            pass
 
+        # Phase 2: Filter plugin_run folders to exclude those already covered by imports.
+        # This prevents duplicate PATH variables for subdirectories.
+        try:
+            candidates = plugin_folder_candidates
+        except NameError:
+            candidates = []
+        for folder_arg in candidates:
+            try:
+                fa_norm = os.path.normcase(os.path.normpath(os.path.abspath(folder_arg)))
+            except Exception:
+                fa_norm = folder_arg
+            covered = False
+            for r_norm, cre, plugin_names, subs_set in seen_imports:
+                # if this folder is within the import root or one of its subs,
+                # skip adding it as a separate PATH
+                if fa_norm == r_norm or (isinstance(r_norm, str) and fa_norm.startswith(r_norm + os.sep)):
+                    covered = True
+                    break
+                if fa_norm in subs_set:
+                    covered = True
+                    break
+            if not covered:
+                _add_path(folder_arg)
+        # Phase 3: Build indices of plugin_run actions to skip (those covered by import).
+        # If a plugin_run's folder matches an import root or subdir with the same plugin,
+        # it will be generated as part of the import loop and should be skipped here.
         skip_plugin_run_idxs = set()
         for idx, ev in enumerate(self.history):
             if ev.get("action") != "plugin_run":
@@ -143,13 +185,15 @@ class ActionRecorder:
                             skip_plugin_run_idxs.add(idx)
                             break
 
-        # Build path variable names to avoid repeated literal duplication
+        # Phase 4: Build deduplicated PATH_N variable map.
+        # Uses normalized keys for deduplication but preserves original path strings.
         path_vars: Dict[str, str] = {}
         for i, pth in enumerate(path_order, 1):
-            # safe var name
             var = f"PATH_{i}"
             path_vars[pth] = var
 
+        # Phase 5: Generate Python code for each recorded action.
+        # Uses PATH_N variables to deduplicate filesystem paths in exported script.
         for idx, ev in enumerate(self.history):
             if idx in skip_plugin_run_idxs:
                 continue
@@ -277,31 +321,43 @@ class ActionRecorder:
                             )
                         lines.append("")
                 else:
-                    lines.append(f"    # unknown export type {ptype} -> {path}")
-                    lines.append("")
-                if ptype == "task_params":
-                    lines.append(f"    # load task parameters from {path}")
-                    lines.append(f"    try:")
-                    p_abs = os.path.abspath(path) if path else path
-                    pvar = path_vars.get(p_abs)
-                    if pvar:
-                        lines.append(f"        with open({pvar}, 'r', encoding='utf-8') as fh:")
+                    # handle unknown export types gracefully
+                    if ptype == "task_params":
+                        # Export task parameters: write current task name, settings, and meta to JSON.
+                        lines.append(f"    # export task parameters -> {path}")
+                        lines.append("    try:")
+                        p_abs = os.path.abspath(path) if path else path
+                        pvar = path_vars.get(p_abs)
+                        target = pvar if pvar else json.dumps(path, ensure_ascii=False)
+                        lines.append(f"        payload = {{'name': task.name, 'settings': task.settings, 'meta': task.meta}}")
+                        lines.append(f"        with open({target}, 'w', encoding='utf-8') as fh:")
+                        lines.append("            json.dump(payload, fh, ensure_ascii=False, indent=2)")
+                        lines.append("    except Exception as __ex:")
+                        lines.append("        print('写入任务参数失败：', __ex)")
+                        lines.append("")
                     else:
-                        lines.append(
-                            f"        with open({json.dumps(path, ensure_ascii=False)}, 'r', encoding='utf-8') as fh:"
-                        )
-                    lines.append(f"            payload = json.load(fh)")
-                    lines.append("        task.name = payload.get('name', task.name)")
-                    lines.append(
-                        "        task.settings.update(payload.get('settings', {}))"
-                    )
-                    lines.append("        task.meta.update(payload.get('meta', {}))")
-                    lines.append(f"    except Exception as __ex:")
-                    lines.append(f"        print('加载任务参数失败：', __ex)")
-                    lines.append("")
+                        lines.append(f"    # unknown export type {ptype} -> {path}")
+                        lines.append("")
             else:
                 lines.append(f"    # action {a} skipped")
                 lines.append("")
+
+        # Phase 6: Emit collected PATH_N variable definitions near the start of main().
+        # This ensures all paths are defined before being referenced in action code.
+        if path_order:
+            try:
+                insert_at = lines.index("    pm.load_plugins()") + 1
+            except ValueError:
+                insert_at = 4
+            defs = ["    # Path variables (deduplicated filesystem paths):"]
+            for pth in path_order:
+                var = path_vars.get(pth)
+                if var:
+                    # Emit as raw string literal to preserve backslashes and avoid JSON escapes.
+                    lit = pth.replace("'", "\\'")
+                    defs.append(f"    {var} = r'{lit}'")
+            for i, d in enumerate(reversed(defs)):
+                lines.insert(insert_at, d)
 
         lines.append("")
         lines.append("if __name__ == '__main__':")

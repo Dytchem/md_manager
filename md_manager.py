@@ -1,9 +1,8 @@
-# md_manager.py
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
 """
-md_manager.py - repository root launcher
-This file delegates to the package implementation under `md_modules`.
+md_manager - Main entry point for MD trajectory analysis and visualization.
+Delegates to the package implementation under md_modules for core functionality.
 """
 
 from md_modules.cli import MDManagerCLI

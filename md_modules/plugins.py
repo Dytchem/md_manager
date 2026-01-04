@@ -1,4 +1,9 @@
-# plugins.py (package)
+"""
+plugins.py - Plugin loader and manager for trajectory analysis.
+
+Loads .on.py plugin files from the plugins/ directory, manages plugin
+registration, discovery by scope, and user input prompting.
+"""
 import importlib.util
 import os
 import re
@@ -9,6 +14,7 @@ from .ui_utils import input_line
 
 
 class Plugin:
+    """Represents a loaded trajectory analysis plugin with metadata and execution function."""
     def __init__(self, module, name, description, scope, run_func, input_spec):
         self.module = module
         self.name = name
@@ -19,6 +25,7 @@ class Plugin:
 
 
 class PluginManager:
+    """Loads, manages, and discovers plugins from the plugins/ directory."""
     def __init__(self, plugins_dir: str = "plugins"):
         self.plugins_dir = plugins_dir
         self.plugins: List[Plugin] = []

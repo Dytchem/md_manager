@@ -1,4 +1,9 @@
-# plugins/base.on.py
+"""
+base.on.py - Base plugin utilities and common helper functions.
+
+Provides utility functions for trajectory creation, data type conversion,
+and formatting that are used by other analysis plugins.
+"""
 # -*- coding: utf-8 -*-
 
 import math
@@ -6,16 +11,18 @@ import os
 import re
 from typing import Any, Dict, List, Tuple
 
-# 主程序在加载时注入 Trajectory/SimpleTable；兜底导入用于静态检查或独立运行
+# Plugin loader injects Trajectory and SimpleTable at runtime.
+# Fallback imports for static analysis and standalone plugin execution.
 try:
     Trajectory  # type: ignore
     SimpleTable  # type: ignore
 except NameError:
-    # 当插件独立运行或静态检查时，从 core 导入所需类型
+    # Import from core when plugin runs standalone or during static checks.
     from md_modules.core import SimpleTable, Trajectory  # type: ignore
 
 
 def _to_float(v):
+    """Convert value to float, returning None on failure."""
     try:
         return float(v)
     except Exception:
@@ -23,6 +30,7 @@ def _to_float(v):
 
 
 def _to_int(v):
+    """Convert value to int, returning None on failure."""
     try:
         return int(str(v).strip())
     except Exception:
@@ -30,18 +38,21 @@ def _to_int(v):
 
 
 def fmt_f10(x: float) -> str:
+    """Format float to 10 decimal places."""
     if x is None:
         return ""
     return f"{x:.10f}"
 
 
 def fmt_t8(x: float) -> str:
+    """Format float to 8 decimal places."""
     if x is None:
         return ""
     return f"{x:.8f}"
 
 
 def fmt_int(v) -> int:
+    """Format value as integer."""
     iv = _to_int(v)
     return iv if iv is not None else None
 
