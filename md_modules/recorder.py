@@ -403,10 +403,18 @@ class ActionRecorder:
                         p_abs = os.path.abspath(path) if path else path
                         pvar = path_vars.get(p_abs)
                         target = pvar if pvar else json.dumps(path, ensure_ascii=False)
+                        cols = p.get("cols") or []
                         # Prefer exporting the live time_table to avoid embedding huge row payloads.
                         lines.append("    table = getattr(task, 'time_table', None)")
                         lines.append("    if table:")
-                        lines.append("        table.to_csv(" + target + ")")
+                        if cols:
+                            lines.append(
+                                "        table.to_csv("
+                                + target
+                                + f", columns={json.dumps(cols, ensure_ascii=False)})"
+                            )
+                        else:
+                            lines.append("        table.to_csv(" + target + ")")
                         lines.append("    else:")
                         lines.append(
                             "        print('time_table not available during replay; skipping export')\n"

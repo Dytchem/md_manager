@@ -232,7 +232,8 @@ class MDManagerCLI:
                 continue
             plugin = clist[int(s2) - 1]
             args = prompt_args_by_input_spec(plugin)
-            if not args and plugin.input.get("mode") == "form":
+            if args is None:
+                # 用户主动返回上一层（q 或 Ctrl+D/Ctrl+Z）
                 continue
             try:
                 result = plugin.run(self.current_task, args)

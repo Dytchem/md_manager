@@ -654,12 +654,12 @@ def menu_trajectory_list(manager):
                 continue
 
             cols = manager.choose_columns(tt.columns)
-            page = int(manager.current_task.settings.get("page_size", 20))
+            page_size_tt = int(manager.current_task.settings.get("page_size", 20))
 
             TableViewer.run(
                 SimpleTable(tt.columns, tt.rows),
                 default_columns=cols,
-                page_size=page,
+                page_size=page_size_tt,
                 title="=== 时刻表 ===",
                 export_all_handler=None,
                 delete_handler=None,

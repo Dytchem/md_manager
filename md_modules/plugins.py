@@ -11,7 +11,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from .core import SimpleTable, Trajectory
-from .ui_utils import input_line
+from .ui_utils import input_line, is_quit, last_input_was_eof
 
 
 class Plugin:
@@ -80,8 +80,8 @@ class PluginManager:
         )
 
 
-def prompt_args_by_input_spec(plugin: Plugin) -> Dict[str, Any]:
-    """Prompt the user for plugin arguments based on its input spec."""
+def prompt_args_by_input_spec(plugin: Plugin) -> Optional[Dict[str, Any]]:
+    """Prompt for plugin arguments; return None if user quits/EOF."""
     spec = plugin.input or {}
     mode = (spec.get("mode") or "form").lower()
     if mode == "line":
@@ -92,6 +92,8 @@ def prompt_args_by_input_spec(plugin: Plugin) -> Dict[str, Any]:
         if example:
             print(f"示例：{example}")
         line = input_line("> ")
+        if last_input_was_eof() or is_quit(line):
+            return None
         return {"__raw__": line}
     else:
         fields = spec.get("fields") or []
@@ -100,6 +102,9 @@ def prompt_args_by_input_spec(plugin: Plugin) -> Dict[str, Any]:
             name = f.get("name")
             prompt = f.get("prompt") or name or ""
             default = f.get("default", "")
-            val = input_line(f"{prompt}（默认 {default}）：") or default
+            val = input_line(f"{prompt}（默认 {default}）：")
+            if last_input_was_eof() or is_quit(val):
+                return None
+            val = val or default
             args[name] = val
         return args
