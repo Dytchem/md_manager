@@ -40,11 +40,23 @@ class ActionRecorder:
         lines.append("# -*- coding: utf-8 -*-")
         lines.append("import os, re, json, sys")
         lines.append("")
-        # hardcode project path so exported script can import md_manager reliably
-        lines.append(
-            "# hardcoded project path so imports work when this script is run from any directory"
-        )
-        lines.append("sys.path.insert(0, r'E:\\GitHub\\md_manager')")
+        # Locate project root (directory containing md_modules) relative to this script.
+        lines.append("script_dir = os.path.abspath(os.path.dirname(__file__))")
+        lines.append("candidates = [")
+        lines.append("    script_dir,")
+        lines.append("    os.path.abspath(os.path.join(script_dir, os.pardir)),")
+        lines.append("    os.path.abspath(os.path.join(script_dir, os.pardir, os.pardir)),")
+        lines.append("]")
+        lines.append("project_root = None")
+        lines.append("for base in candidates:")
+        lines.append("    if os.path.isdir(os.path.join(base, 'md_modules')):")
+        lines.append("        project_root = base")
+        lines.append("        break")
+        lines.append("if project_root:")
+        lines.append("    sys.path.insert(0, project_root)")
+        lines.append("else:")
+        lines.append("    # fallback to script directory; imports may fail if md_modules is elsewhere")
+        lines.append("    sys.path.insert(0, script_dir)")
         lines.append("")
         # import the packaged modules in the exported script
         lines.append("import md_modules.plugins as plugins")
