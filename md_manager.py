@@ -1,4 +1,4 @@
-#!python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 md_manager - Main entry point for MD trajectory analysis and visualization.
