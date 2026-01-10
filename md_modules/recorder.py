@@ -40,34 +40,44 @@ class ActionRecorder:
         lines: List[str] = []
         lines.append("# -*- coding: utf-8 -*-")
         lines.append("import os, re, json, sys")
-        lines.append("")
-        # Ensure project root (containing md_modules) is on sys.path dynamically.
-        lines.append("def _add_project_root():")
-        lines.append("    here = os.path.abspath(os.path.dirname(__file__))")
-        lines.append("    for _ in range(5):")
-        lines.append("        if os.path.isdir(os.path.join(here, 'md_modules')):")
-        lines.append("            if here not in sys.path:")
-        lines.append("                sys.path.insert(0, here)")
-        lines.append("            return here")
-        lines.append("        parent = os.path.abspath(os.path.join(here, os.pardir))")
-        lines.append("        if parent == here:")
-        lines.append("            break")
-        lines.append("        here = parent")
-        lines.append("    cwd = os.path.abspath(os.getcwd())")
-        lines.append("    for _ in range(5):")
-        lines.append("        if os.path.isdir(os.path.join(cwd, 'md_modules')):")
-        lines.append("            if cwd not in sys.path:")
-        lines.append("                sys.path.insert(0, cwd)")
-        lines.append("            return cwd")
-        lines.append("        parent = os.path.abspath(os.path.join(cwd, os.pardir))")
-        lines.append("        if parent == cwd:")
-        lines.append("            break")
-        lines.append("        cwd = parent")
-        lines.append(
-            "    raise RuntimeError('md_modules not found; please run from project directory')"
-        )
-        lines.append("")
-        lines.append("_add_project_root()")
+        # Hardcode current project root (contains md_modules) into exported script.
+        project_root: Optional[str] = None
+        search_roots = []
+        try:
+            search_roots.append(os.path.abspath(os.getcwd()))
+        except Exception:
+            pass
+        try:
+            search_roots.append(os.path.abspath(os.path.dirname(__file__)))
+        except Exception:
+            pass
+        for root in search_roots:
+            cur = root
+            for _ in range(6):
+                if os.path.isdir(os.path.join(cur, "md_modules")):
+                    project_root = cur
+                    break
+                parent = os.path.abspath(os.path.join(cur, os.pardir))
+                if parent == cur:
+                    break
+                cur = parent
+            if project_root:
+                break
+
+        if project_root:
+            # Keep backslashes as-is for clearer Windows paths; only escape quotes.
+            lit = project_root.replace("'", "\\'")
+            lines.append(f"PROJECT_ROOT = r'{lit}'")
+            lines.append(
+                "if not os.path.isdir(os.path.join(PROJECT_ROOT, 'md_modules')):"
+            )
+            lines.append(
+                "    raise RuntimeError('Hardcoded md_manager path invalid: ' + PROJECT_ROOT)"
+            )
+            lines.append("if PROJECT_ROOT not in sys.path:")
+            lines.append("    sys.path.insert(0, PROJECT_ROOT)")
+        else:
+            lines.append("raise RuntimeError('md_modules not found when exporting script')")
         lines.append("")
         # import the packaged modules in the exported script
         lines.append("import md_modules.plugins as plugins")
