@@ -473,17 +473,13 @@ def menu_trajectory_list(manager):
     # Calculate available fields
     cols_all = ["traj_id", "name"]
     calc_cols = sorted(
-        {
-            k
-            for t in manager.current_task.trajectories.values()
-            for k in t.meta.keys()
-        },
+        {k for t in manager.current_task.trajectories.values() for k in t.meta.keys()},
         key=_natural_key_parts,
     )
     for c in calc_cols:
         if c not in cols_all:
             cols_all.append(c)
-    
+
     saved_fields = manager.current_task.settings.get("list_fields", ["traj_id", "name"])
     if saved_fields:
         valid_fields = [f for f in saved_fields if f in cols_all]
@@ -493,7 +489,7 @@ def menu_trajectory_list(manager):
             fields = ["traj_id", "name"]
     else:
         fields = ["traj_id", "name"]
-    
+
     order_tids = sorted(manager.current_task.trajectories.keys(), key=lambda x: int(x))
     page_size = max(1, int(manager.current_task.settings.get("page_size", 20)))
     page = 0
