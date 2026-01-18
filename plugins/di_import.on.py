@@ -117,23 +117,30 @@ def _parse_di_time(path: str) -> Tuple[Dict[int, Dict[str, Any]], List[int], int
             # 读取 Mulliken Charge
             if i < len(lines) and "Mulliken Charge" in lines[i]:
                 i += 1
-                atom_charges = {}
                 while i < len(lines):
                     line = lines[i].strip()
-                    if not line:
+                    if not line or line.startswith("Dipole"):
                         break
-                    parts = line.split()
-                    if len(parts) >= 2 and parts[0].isdigit():
-                        atom_idx = int(parts[0])
-                        charge = _to_float(parts[1])
-                        atom_charges[atom_idx] = charge
-                        n_atoms = max(n_atoms, atom_idx)
+                    m_state = re.match(r"^State\s+(\d+)\.(\d+)", line)
+                    if m_state:
+                        state = f"{m_state.group(1)}.{m_state.group(2)}"
+                        i += 1
+                        atom_charges = {}
+                        while i < len(lines):
+                            line = lines[i].strip()
+                            if not line or re.match(r"^State\s+\d+\.\d+", line) or line.startswith("Dipole"):
+                                break
+                            parts = line.split()
+                            if len(parts) >= 2 and parts[0].isdigit():
+                                atom_idx = int(parts[0])
+                                charge = _to_float(parts[1])
+                                atom_charges[atom_idx] = charge
+                                n_atoms = max(n_atoms, atom_idx)
+                            i += 1
+                        for atom_idx, charge in atom_charges.items():
+                            data[f"mulliken_{state}_{atom_idx}"] = charge
                     else:
-                        break
-                    i += 1
-
-                for atom_idx, charge in atom_charges.items():
-                    data[f"mulliken_{atom_idx}"] = charge
+                        i += 1
 
             # 跳过空行
             while i < len(lines) and not lines[i].strip():

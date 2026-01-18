@@ -77,7 +77,9 @@ class ActionRecorder:
             lines.append("if PROJECT_ROOT not in sys.path:")
             lines.append("    sys.path.insert(0, PROJECT_ROOT)")
         else:
-            lines.append("raise RuntimeError('md_modules not found when exporting script')")
+            lines.append(
+                "raise RuntimeError('md_modules not found when exporting script')"
+            )
         lines.append("")
         # import the packaged modules in the exported script
         lines.append("import md_modules.plugins as plugins")
