@@ -119,7 +119,10 @@ def _parse_di_time(path: str) -> Tuple[Dict[int, Dict[str, Any]], List[int], int
                 i += 1
                 while i < len(lines):
                     line = lines[i].strip()
-                    if not line or line.startswith("Dipole"):
+                    if not line:
+                        i += 1
+                        continue
+                    if line.startswith("Dipole"):
                         break
                     m_state = re.match(r"^State\s+(\d+)\.(\d+)", line)
                     if m_state:
