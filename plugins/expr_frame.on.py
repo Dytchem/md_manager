@@ -128,8 +128,8 @@ class CompiledLine:
 
 def _compile_one_line(line: str) -> CompiledLine:
     # 预处理：将变量名中的点号替换为下划线（假设点号后跟字母或下划线）
-    line = re.sub(r'\.([a-zA-Z_])', r'_\1', line)
-    
+    line = re.sub(r"\.([a-zA-Z_])", r"_\1", line)
+
     mod = ast.parse(line, mode="exec")
     _validate_ast(mod)
     assigns = [n for n in ast.walk(mod) if isinstance(n, ast.Assign)]
@@ -180,7 +180,7 @@ def _build_ctx_min(
                 ctx[nm] = v
         else:
             # 尝试替换下划线为点号，以支持列名中的点号
-            dotted_nm = nm.replace('_', '.')
+            dotted_nm = nm.replace("_", ".")
             if dotted_nm in row:
                 v = row[dotted_nm]
                 if isinstance(v, str):
@@ -259,7 +259,7 @@ def run_expr_frame(task, args):
 
                     if cl.kind == "assign":
                         # 尝试映射回点号版本，如果列名包含点号
-                        dotted_var = cl.var.replace('_', '.')
+                        dotted_var = cl.var.replace("_", ".")
                         if dotted_var in cols_set or dotted_var in r:
                             target_var = dotted_var
                         else:
@@ -278,7 +278,7 @@ def run_expr_frame(task, args):
                     # —— 错误也生成参数，但直接把错误文本写在目标列 —— #
                     if cl.kind == "assign":
                         # 尝试映射回点号版本
-                        dotted_var = cl.var.replace('_', '.')
+                        dotted_var = cl.var.replace("_", ".")
                         if dotted_var in cols_set or dotted_var in r:
                             target_var = dotted_var
                         else:
