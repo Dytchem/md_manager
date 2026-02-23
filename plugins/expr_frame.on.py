@@ -127,9 +127,14 @@ class CompiledLine:
 
 
 def _compile_one_line(line: str) -> CompiledLine:
-    # 预处理：将变量名中的点号替换为下划线（假设点号后跟字母或下划线）
-    line = re.sub(r"\.([a-zA-Z_])", r"_\1", line)
-
+    # 预处理：保护数字中的点号，替换变量名中的点号为下划线
+    # 1. 将数字中的点号替换为 PLACEHOLDER
+    line = re.sub(r'(\d)\.(\d)', r'\1PLACEHOLDER\2', line)
+    # 2. 将剩余的点号（在变量名中）替换为下划线
+    line = re.sub(r'\.', '_', line)
+    # 3. 将 PLACEHOLDER 替换回点号
+    line = line.replace('PLACEHOLDER', '.')
+    
     mod = ast.parse(line, mode="exec")
     _validate_ast(mod)
     assigns = [n for n in ast.walk(mod) if isinstance(n, ast.Assign)]
