@@ -15,6 +15,13 @@ except NameError:
     from md_modules.core import SimpleTable, Trajectory  # type: ignore
 
 
+def _to_float_once(v):
+    try:
+        return float(v)
+    except Exception:
+        return None
+
+
 def fmt_f10(x: float) -> str:
     if x is None:
         return ""
