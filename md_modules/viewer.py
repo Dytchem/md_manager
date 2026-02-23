@@ -157,7 +157,7 @@ class TableViewer:
         context: Optional[Dict[str, Any]] = None,
         export_type_page: str = "traj_view",
         export_type_all: str = "traj_view_all",
-    ) -> List[str]:
+    ) -> tuple[List[str], int]:
         rows_local = list(table.rows)
         cols = default_columns or table.columns
         cols = [c for c in cols if c in table.columns]
@@ -216,7 +216,7 @@ class TableViewer:
             arg = parts[1].strip() if len(parts) > 1 else ""
 
             if cmd in ("q", "退出", "返回"):
-                return cols
+                return cols, ps
             elif cmd == "n":
                 if page + 1 < refresh_total():
                     page += 1
@@ -810,7 +810,7 @@ def menu_trajectory_list(manager):
                 manager.current_task.settings["time_table_columns"] = cols
             page_size_tt = int(manager.current_task.settings.get("page_size", 20))
 
-            TableViewer.run(
+            cols, ps = TableViewer.run(
                 SimpleTable(tt.columns, tt.rows),
                 default_columns=cols,
                 page_size=page_size_tt,
@@ -823,8 +823,9 @@ def menu_trajectory_list(manager):
                 export_type_page="time_table",
                 export_type_all="time_table",
             )
-            # Update saved columns after viewer exits
+            # Update saved columns and page size after viewer exits
             manager.current_task.settings["time_table_columns"] = cols
+            manager.current_task.settings["page_size"] = ps
 
 
 def menu_view_trajectory(manager, traj):
@@ -878,7 +879,7 @@ def menu_view_trajectory(manager, traj):
                 ids = set(id(r) for r in rows_to_del)
                 traj.table.rows = [r for r in traj.table.rows if id(r) not in ids]
 
-            TableViewer.run(
+            cols, ps = TableViewer.run(
                 SimpleTable(traj.table.columns, traj.table.rows),
                 default_columns=cols,
                 page_size=page,
@@ -889,6 +890,7 @@ def menu_view_trajectory(manager, traj):
                 recorder=manager.recorder,
                 context={"traj_id": traj.traj_id},
             )
-            # Update saved columns after viewer exits
+            # Update saved columns and page size after viewer exits
             manager.current_task.settings["traj_table_columns"] = cols
+            manager.current_task.settings["page_size"] = ps
             continue
