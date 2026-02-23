@@ -15,13 +15,6 @@ except NameError:
     from md_modules.core import SimpleTable, Trajectory  # type: ignore
 
 
-def _to_float_once(v):
-    try:
-        return float(v)
-    except Exception:
-        return None
-
-
 def fmt_f10(x: float) -> str:
     if x is None:
         return ""
@@ -62,6 +55,7 @@ ALLOWED_NAMES = set(ALLOWED_FUNCS.keys()) | set(ALLOWED_CONSTS.keys())
 ALLOWED_NODES = (
     ast.Module,
     ast.Expr,
+    ast.Expression,
     ast.Assign,
     ast.Name,
     ast.Load,
@@ -90,6 +84,7 @@ ALLOWED_NODES = (
     ast.GtE,
     ast.Call,
     ast.keyword,
+    ast.Attribute,
 )
 
 
@@ -98,7 +93,8 @@ def _validate_ast(tree: ast.AST):
         if not isinstance(n, ALLOWED_NODES):
             raise ValueError(f"不支持语法: {type(n).__name__}")
         if isinstance(n, ast.Attribute):
-            raise ValueError("禁止属性访问（请用 sqrt/pi 等裸名）")
+            if not isinstance(n.value, ast.Name):
+                raise ValueError("仅允许一级属性访问")
         if isinstance(n, ast.Call):
             f = n.func
             if not isinstance(f, ast.Name):
@@ -107,54 +103,69 @@ def _validate_ast(tree: ast.AST):
                 raise ValueError(f"不允许的函数: {f.id}")
 
 
-def _names_in_expr(expr_node: ast.AST) -> Set[str]:
-    names: Set[str] = set()
-    for n in ast.walk(expr_node):
-        if isinstance(n, ast.Name):
-            names.add(n.id)
-    # 排除白名单函数与常量名；保留真正需要从行/任务上下文取值的变量名
-    return {nm for nm in names if nm not in ALLOWED_NAMES}
+def _names_in_expr_str(expr_src: str) -> Set[str]:
+    import re
+
+    names = set()
+    for match in re.finditer(r"\b[a-zA-Z_][a-zA-Z0-9_.]*\b", expr_src):
+        word = match.group()
+        if (
+            word not in ALLOWED_NAMES
+            and not word.replace(".", "").replace("_", "").isdigit()
+        ):
+            names.add(word)
+    return names
 
 
 class CompiledLine:
-    __slots__ = ("kind", "var", "code", "need_names")
+    __slots__ = ("kind", "var", "src", "need_names")
 
-    def __init__(self, kind: str, var: str, code, need_names: Set[str]):
+    def __init__(self, kind: str, var: str, src, need_names: Set[str]):
         self.kind = kind
         self.var = var
-        self.code = code
+        self.src = src
         self.need_names = need_names
 
 
 def _compile_one_line(line: str) -> CompiledLine:
-    # 预处理：保护数字中的点号，替换变量名中的点号为下划线
-    # 1. 将数字中的点号替换为 PLACEHOLDER
-    line = re.sub(r"(\d)\.(\d)", r"\1PLACEHOLDER\2", line)
-    # 2. 将剩余的点号（在变量名中）替换为下划线
-    line = re.sub(r"\.", "_", line)
-    # 3. 将 PLACEHOLDER 替换回点号
-    line = line.replace("PLACEHOLDER", ".")
-
-    mod = ast.parse(line, mode="exec")
-    _validate_ast(mod)
-    assigns = [n for n in ast.walk(mod) if isinstance(n, ast.Assign)]
-    if assigns:
-        a = assigns[0]
-        if len(a.targets) != 1 or not isinstance(a.targets[0], ast.Name):
-            raise ValueError("仅支持 var = expr")
-        var = a.targets[0].id
-        expr_src = line.split("=", 1)[1].strip()
+    line = line.strip()
+    if "=" in line:
+        parts = line.split("=", 1)
+        if len(parts) == 2:
+            var_part = parts[0].strip()
+            expr_src = parts[1].strip()
+            if var_part and var_part.isidentifier():
+                var = var_part
+                kind = "assign"
+            else:
+                var = ""
+                expr_src = line
+                kind = "expr"
+        else:
+            var = ""
+            expr_src = line
+            kind = "expr"
     else:
         var = ""
         expr_src = line
+        kind = "expr"
 
-    src = f"__v__=({expr_src})"
-    tree = ast.parse(src, mode="exec")
-    _validate_ast(tree)
-    need = _names_in_expr(tree)
-    code = compile(tree, "<expr>", "exec")
-    kind = "assign" if assigns else "expr"
-    return CompiledLine(kind, var, code, need)
+    src = f"({expr_src})"
+    try:
+        tree = ast.parse(src, mode="eval")
+        _validate_ast(tree)
+        need = _names_in_expr(tree)
+    except SyntaxError:
+        need = _names_in_expr_str(expr_src)
+
+    # 替换点号名称为 get_value 调用
+    expr_src_modified = expr_src
+    for nm in need:
+        if "." in nm:
+            expr_src_modified = expr_src_modified.replace(nm, f"get_value('{nm}')")
+
+    src = f"({expr_src_modified})"
+    return CompiledLine(kind, var, src, need)
 
 
 def _compile_all(raw: str) -> List[CompiledLine]:
@@ -205,6 +216,8 @@ def _build_ctx_min(
             ctx[nm] = fv if fv is not None else v
         elif v is not None:
             ctx[nm] = v
+    # 添加 get_value 函数
+    ctx["get_value"] = lambda k: row.get(k, task_meta.get(k, None))
     return ctx
 
 
@@ -246,8 +259,7 @@ def run_expr_frame(task, args):
 
             for i, cl in enumerate(compiled_lines, start=1):
                 try:
-                    exec(cl.code, GLOBALS, ctx)
-                    val = ctx.get("__v__")
+                    val = eval(cl.src, GLOBALS, ctx)
 
                     # NaN / Inf 也视为“错误”
                     if _is_bad_number(val):
