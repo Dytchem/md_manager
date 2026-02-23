@@ -3,6 +3,7 @@
 
 import ast
 import math
+import re
 from typing import Any, Dict, List, Set, Tuple
 
 # 主程序在加载时注入 Trajectory/SimpleTable；兜底导入用于静态检查或独立运行
@@ -126,6 +127,9 @@ class CompiledLine:
 
 
 def _compile_one_line(line: str) -> CompiledLine:
+    # 预处理：将变量名中的点号替换为下划线（假设点号后跟字母或下划线）
+    line = re.sub(r'\.([a-zA-Z_])', r'_\1', line)
+    
     mod = ast.parse(line, mode="exec")
     _validate_ast(mod)
     assigns = [n for n in ast.walk(mod) if isinstance(n, ast.Assign)]
@@ -174,6 +178,16 @@ def _build_ctx_min(
                 ctx[nm] = fv if fv is not None else v
             else:
                 ctx[nm] = v
+        else:
+            # 尝试替换下划线为点号，以支持列名中的点号
+            dotted_nm = nm.replace('_', '.')
+            if dotted_nm in row:
+                v = row[dotted_nm]
+                if isinstance(v, str):
+                    fv = _to_float_once(v)
+                    ctx[nm] = fv if fv is not None else v
+                else:
+                    ctx[nm] = v
     # 任务元数据补缺
     for nm in names_needed:
         if nm in ctx:
@@ -244,10 +258,16 @@ def run_expr_frame(task, args):
                         )
 
                     if cl.kind == "assign":
-                        r[cl.var] = out
+                        # 尝试映射回点号版本，如果列名包含点号
+                        dotted_var = cl.var.replace('_', '.')
+                        if dotted_var in cols_set or dotted_var in r:
+                            target_var = dotted_var
+                        else:
+                            target_var = cl.var
+                        r[target_var] = out
                         ctx[cl.var] = out_for_ctx if out_for_ctx is not None else out
-                        new_cols.add(cl.var)
-                        cols_set.add(cl.var)
+                        new_cols.add(target_var)
+                        cols_set.add(target_var)
                     else:
                         key = f"_expr{i}"
                         r[key] = out
@@ -257,9 +277,15 @@ def run_expr_frame(task, args):
                 except Exception as ex:
                     # —— 错误也生成参数，但直接把错误文本写在目标列 —— #
                     if cl.kind == "assign":
-                        r[cl.var] = _err_text(ex)
-                        new_cols.add(cl.var)
-                        cols_set.add(cl.var)
+                        # 尝试映射回点号版本
+                        dotted_var = cl.var.replace('_', '.')
+                        if dotted_var in cols_set or dotted_var in r:
+                            target_var = dotted_var
+                        else:
+                            target_var = cl.var
+                        r[target_var] = _err_text(ex)
+                        new_cols.add(target_var)
+                        cols_set.add(target_var)
                     else:
                         key = f"_expr{i}"
                         r[key] = _err_text(ex)
